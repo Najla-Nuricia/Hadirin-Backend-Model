@@ -1,0 +1,3 @@
+# QA tests
+
+The API prototype is intentionally backed by dummy data. for now...
