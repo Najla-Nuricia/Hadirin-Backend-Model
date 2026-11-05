@@ -6,7 +6,7 @@ Terhubung ke database resmi Supabase project Hadirin (tabel mahasiswa, kelas, pr
 import math
 import os
 import uuid
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Dict, List, Optional
 
 from dotenv import load_dotenv
@@ -35,6 +35,37 @@ HARI_KE_ANGKA = {
     "minggu": 7,
 }
 ANGKA_KE_HARI = {v: k for k, v in HARI_KE_ANGKA.items()}
+JENIS_PENGAJUAN_PATTERN = "^(izin|sakit|kompensasi)$"
+
+# Akun yang dipakai aplikasi Flutter dan tes API. Password tidak ada di tabel mahasiswa.
+DEMO_ACCOUNTS = {
+    "24000001": {
+        "name": "Demo Student One",
+        "class_name": "TI-3A",
+        "email": "24000001@student.polinema.ac.id",
+        "phone": "081200000001",
+        "prodi": "D4-TI",
+    },
+    "24000002": {
+        "name": "Demo Student Two",
+        "class_name": "TI-3A",
+        "email": "24000002@student.polinema.ac.id",
+        "phone": "081200000002",
+        "prodi": "D4-TI",
+    },
+    "2341720001": {
+        "name": "Mahasiswa Demo",
+        "class_name": "3F-TI",
+        "email": "2341720001@student.polinema.ac.id",
+        "phone": "081234567890",
+        "prodi": "D4-TI",
+    },
+}
+DEFAULT_PASSWORDS = {
+    "24000001": "password123",
+    "24000002": "password123",
+    "2341720001": "mahasiswa123",
+}
 
 
 def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -49,6 +80,62 @@ def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> fl
     return radius * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def build_student_profile(
+    *,
+    nim: str,
+    name: str,
+    class_name: str,
+    email: str = "",
+    phone: str = "",
+    prodi: str = "D4-TI",
+    kelas_id: Optional[str] = None,
+) -> dict:
+    """Bentuk profil yang dibaca Flutter: fullName dan phoneNumber, plus field lama."""
+    profile = {
+        "nim": nim,
+        "name": name,
+        "nama_lengkap": name,
+        "fullName": name,
+        "role": "Mahasiswa",
+        "className": class_name,
+        "email": email or "",
+        "no_hp": phone or "",
+        "phoneNumber": phone or "",
+        "kelas": class_name,
+        "prodi": prodi or "D4-TI",
+    }
+    if kelas_id is not None:
+        profile["kelas_id"] = kelas_id
+    return profile
+
+
+def issue_token(nim: str) -> dict:
+    token = f"jwt_{uuid.uuid4()}"
+    _token_store[token] = nim
+    return {"token": token, "access_token": token, "token_type": "bearer"}
+
+
+def password_matches(nim: str, password: str) -> bool:
+    stored = _password_store.get(nim)
+    if stored is None:
+        return True
+    return stored == password
+
+
+def build_attendance_record(method: str, nim: str, **extra) -> dict:
+    now = datetime.now()
+    record = {
+        "method": method,
+        "nim": nim,
+        "date": now.strftime("%d"),
+        "courseName": "Presensi Kelas",
+        "time": now.strftime("%H:%M"),
+        "status": "hadir",
+    }
+    record.update(extra)
+    return record
+
+
 # ── Pydantic Request Models ───────────────────────────────────────────────────
 
 class LoginRequest(BaseModel):
@@ -60,6 +147,11 @@ class RegisterRequest(BaseModel):
     nim: str = Field(..., min_length=1)
     name: str = Field(..., min_length=1)
     password: str = Field(..., min_length=1)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=1)
 
 
 class GpsAttendanceRequest(BaseModel):
@@ -90,7 +182,7 @@ class MahasiswaUpdate(BaseModel):
 
 
 class PengajuanCreate(BaseModel):
-    jenis: str = Field(..., pattern="^(izin|sakit)$")
+    jenis: str = Field(..., pattern=JENIS_PENGAJUAN_PATTERN)
     alasan: str = Field(..., min_length=1)
     matakuliah: str = "Pemrograman Web Lanjut"
     tanggal: str = Field(default_factory=lambda: date.today().isoformat())
@@ -98,7 +190,7 @@ class PengajuanCreate(BaseModel):
 
 
 class PengajuanUpdate(BaseModel):
-    jenis: Optional[str] = Field(default=None, pattern="^(izin|sakit)$")
+    jenis: Optional[str] = Field(default=None, pattern=JENIS_PENGAJUAN_PATTERN)
     alasan: Optional[str] = None
     matakuliah: Optional[str] = None
     tanggal: Optional[str] = None
@@ -117,6 +209,7 @@ def get_supabase() -> Client:
 
 
 _token_store: Dict[str, str] = {}
+_password_store: Dict[str, str] = dict(DEFAULT_PASSWORDS)
 
 
 # ── Auth Dependency ───────────────────────────────────────────────────────────
@@ -154,19 +247,16 @@ def get_current_user(
             detail="Token tidak valid atau sudah kedaluwarsa. Silakan login kembali.",
         )
 
-    if nim in ("24000001", "24000002"):
-        name = "Demo Student One" if nim == "24000001" else "Demo Student Two"
-        return {
-            "nim": nim,
-            "name": name,
-            "nama_lengkap": name,
-            "role": "Mahasiswa",
-            "className": "TI-3A",
-            "email": f"{nim}@student.polinema.ac.id",
-            "no_hp": "081200000001",
-            "kelas": "TI-3A",
-            "prodi": "D4-TI",
-        }
+    if nim in DEMO_ACCOUNTS:
+        account = DEMO_ACCOUNTS[nim]
+        return build_student_profile(
+            nim=nim,
+            name=account["name"],
+            class_name=account["class_name"],
+            email=account["email"],
+            phone=account["phone"],
+            prodi=account["prodi"],
+        )
 
     sb = get_supabase()
     res = (
@@ -185,18 +275,15 @@ def get_current_user(
     m = res.data[0]
     kelas_info = m.get("kelas") or {}
     nama_kelas = kelas_info.get("nama") or "TI-3A"
-    return {
-        "nim": m.get("nim"),
-        "name": m.get("nama_lengkap"),
-        "nama_lengkap": m.get("nama_lengkap"),
-        "role": "Mahasiswa",
-        "className": nama_kelas,
-        "email": m.get("email") or "",
-        "no_hp": m.get("no_hp") or "",
-        "kelas_id": m.get("kelas_id"),
-        "kelas": nama_kelas,
-        "prodi": kelas_info.get("program_studi_kode") or "D4-TI",
-    }
+    return build_student_profile(
+        nim=m.get("nim"),
+        name=m.get("nama_lengkap") or "",
+        class_name=nama_kelas,
+        email=m.get("email") or "",
+        phone=m.get("no_hp") or "",
+        prodi=kelas_info.get("program_studi_kode") or "D4-TI",
+        kelas_id=m.get("kelas_id"),
+    )
 
 
 # ── FastAPI App Factory ───────────────────────────────────────────────────────
@@ -216,6 +303,9 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    _token_store.clear()
+    _password_store.clear()
+    _password_store.update(DEFAULT_PASSWORDS)
     app.state.local_pengajuan = []
     app.state.attendance_records = []
 
@@ -223,24 +313,20 @@ def create_app() -> FastAPI:
 
     @app.post("/auth/login", tags=["Auth"])
     def login(body: LoginRequest):
-        if body.nim in ("24000001", "24000002"):
-            if body.password != "password123":
+        if body.nim in DEMO_ACCOUNTS:
+            if not password_matches(body.nim, body.password):
                 raise HTTPException(status_code=401, detail="Password salah.")
-            name = "Demo Student One" if body.nim == "24000001" else "Demo Student Two"
-            token = f"jwt_{uuid.uuid4()}"
-            _token_store[token] = body.nim
+            account = DEMO_ACCOUNTS[body.nim]
             return {
-                "token": token,
-                "access_token": token,
-                "token_type": "bearer",
-                "nim": body.nim,
-                "name": name,
-                "nama_lengkap": name,
-                "role": "Mahasiswa",
-                "className": "TI-3A",
-                "email": f"{body.nim}@student.polinema.ac.id",
-                "kelas": "TI-3A",
-                "prodi": "D4-TI",
+                **issue_token(body.nim),
+                **build_student_profile(
+                    nim=body.nim,
+                    name=account["name"],
+                    class_name=account["class_name"],
+                    email=account["email"],
+                    phone=account["phone"],
+                    prodi=account["prodi"],
+                ),
             }
 
         sb = get_supabase()
@@ -258,29 +344,27 @@ def create_app() -> FastAPI:
             )
 
         mhs = res.data[0]
+        if not password_matches(mhs["nim"], body.password):
+            raise HTTPException(status_code=401, detail="Password salah.")
+
         kelas_info = mhs.get("kelas") or {}
         nama_kelas = kelas_info.get("nama") or "TI-3A"
-
-        token = f"jwt_{uuid.uuid4()}"
-        _token_store[token] = mhs["nim"]
-
         return {
-            "token": token,
-            "access_token": token,
-            "token_type": "bearer",
-            "nim": mhs["nim"],
-            "name": mhs["nama_lengkap"],
-            "nama_lengkap": mhs["nama_lengkap"],
-            "role": "Mahasiswa",
-            "className": nama_kelas,
-            "email": mhs.get("email") or "",
-            "kelas": nama_kelas,
-            "prodi": kelas_info.get("program_studi_kode") or "D4-TI",
+            **issue_token(mhs["nim"]),
+            **build_student_profile(
+                nim=mhs["nim"],
+                name=mhs["nama_lengkap"],
+                class_name=nama_kelas,
+                email=mhs.get("email") or "",
+                phone=mhs.get("no_hp") or "",
+                prodi=kelas_info.get("program_studi_kode") or "D4-TI",
+                kelas_id=mhs.get("kelas_id"),
+            ),
         }
 
     @app.post("/auth/register", tags=["Auth"], status_code=status.HTTP_201_CREATED)
     def register(body: RegisterRequest):
-        if body.nim in ("24000001", "24000002"):
+        if body.nim in DEMO_ACCOUNTS:
             raise HTTPException(status_code=409, detail=f"NIM {body.nim} sudah terdaftar.")
 
         sb = get_supabase()
@@ -301,8 +385,26 @@ def create_app() -> FastAPI:
             "kelas_id": kelas_id,
         }
         sb.table("mahasiswa").insert(insert_payload).execute()
+        _password_store[body.nim] = body.password
 
         return {"message": f"Mahasiswa {body.nim} berhasil ditambahkan ke database.", "nim": body.nim}
+
+    @app.post("/auth/change-password", tags=["Auth"])
+    def change_password(
+        body: ChangePasswordRequest,
+        current_user: dict = Depends(get_current_user),
+    ):
+        nim = current_user["nim"]
+        stored = _password_store.get(nim)
+        if stored is None or stored != body.current_password:
+            raise HTTPException(status_code=401, detail="Password saat ini salah.")
+        if body.new_password == body.current_password:
+            raise HTTPException(
+                status_code=400,
+                detail="Password baru harus berbeda dari password saat ini.",
+            )
+        _password_store[nim] = body.new_password
+        return {"message": "Password berhasil diubah.", "nim": nim}
 
     # ── 2. API LOAD DATA MAHASISWA (TERHUBUNG KE DATABASE SUPABASE) ───────────
 
@@ -585,18 +687,23 @@ def create_app() -> FastAPI:
         if dist > MAX_GPS_DISTANCE_METERS:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Terlalu jauh dari kampus ({dist:.0f}m).")
 
-        record = {"method": "gps", "nim": current_user["nim"], "jarak_meter": round(dist, 2), "distance_meters": int(round(dist))}
+        record = build_attendance_record(
+            "gps",
+            current_user["nim"],
+            jarak_meter=round(dist, 2),
+            distance_meters=int(round(dist)),
+        )
         app.state.attendance_records.append(record)
-        return {"method": "gps", "message": "Absen GPS berhasil ✅", "nim": current_user["nim"], "jarak_meter": round(dist, 2), "distance_meters": int(round(dist))}
+        return {**record, "message": "Absen GPS berhasil ✅"}
 
     @app.post("/attendance/qr", tags=["Presensi"])
     def absen_qr(body: QrAttendanceRequest, current_user: dict = Depends(get_current_user)):
         if body.code != DEMO_VALID_QR_CODE:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="QR Code tidak valid.")
 
-        record = {"method": "qr", "nim": current_user["nim"], "code": body.code}
+        record = build_attendance_record("qr", current_user["nim"], code=body.code)
         app.state.attendance_records.append(record)
-        return {"method": "qr", "message": "Absen QR berhasil ✅", "nim": current_user["nim"], "code": body.code}
+        return {**record, "message": "Absen QR berhasil ✅"}
 
     @app.get("/attendance/history", tags=["Presensi"])
     def get_attendance_history(current_user: dict = Depends(get_current_user)):

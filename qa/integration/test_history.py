@@ -33,5 +33,10 @@ def test_history_only_returns_authenticated_users_records(
 
     assert first_user_history.status_code == 200
     assert [record["method"] for record in first_user_history.json()] == ["qr"]
+    qr_record = first_user_history.json()[0]
+    assert qr_record["status"] == "hadir"
+    assert qr_record["courseName"]
+    assert qr_record["date"]
+    assert qr_record["time"]
     assert second_user_history.status_code == 200
     assert [record["method"] for record in second_user_history.json()] == ["gps"]
