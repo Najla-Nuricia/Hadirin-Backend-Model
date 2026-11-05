@@ -257,6 +257,12 @@ def create_app() -> FastAPI:
                 detail=f"NIM '{body.nim}' tidak terdaftar di database mahasiswa.",
             )
 
+        if body.password != "mahasiswa123":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Password salah.",
+            )
+
         mhs = res.data[0]
         kelas_info = mhs.get("kelas") or {}
         nama_kelas = kelas_info.get("nama") or "TI-3A"
