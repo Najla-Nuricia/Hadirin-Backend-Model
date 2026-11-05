@@ -5,8 +5,9 @@ Terhubung ke database resmi Supabase project Hadirin (tabel mahasiswa, kelas, pr
 
 import math
 import os
+import secrets
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Dict, List, Optional
 
 from dotenv import load_dotenv
@@ -23,6 +24,23 @@ SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 DEMO_CAMPUS_LOCATION = (-6.2, 106.8167)
 DEMO_VALID_QR_CODE = "HADIRIN-DEMO-QR"
 MAX_GPS_DISTANCE_METERS = 200
+
+# Tabel dosen belum menyimpan password, jadi login dosen memakai satu password dari .env.
+# Kosong berarti login dosen dimatikan.
+DOSEN_DEFAULT_PASSWORD = os.environ.get("DOSEN_DEFAULT_PASSWORD", "")
+
+# Tanggal sesi presensi mengikuti zona waktu kampus, bukan zona waktu server.
+WIB = timezone(timedelta(hours=7), "WIB")
+
+SUPABASE_PAGE_SIZE = 1000
+STATUS_KEHADIRAN = ("hadir", "izin", "sakit", "alfa")
+
+JADWAL_DOSEN_COLUMNS = (
+    "id, hari, semester, kelas_id, dosen_nip, "
+    "mata_kuliah(kode, nama, sks), kelas(nama, program_studi_kode), ruangan(kode, nama), "
+    "mulai:sesi_kuliah!jadwal_kuliah_sesi_mulai_fkey(jam_mulai), "
+    "selesai:sesi_kuliah!jadwal_kuliah_sesi_selesai_fkey(jam_selesai)"
+)
 
 # Mapping hari Indonesia -> nomor (1: Senin s/d 7: Minggu)
 HARI_KE_ANGKA = {
@@ -122,6 +140,10 @@ def password_matches(nim: str, password: str) -> bool:
     return stored == password
 
 
+def now_wib() -> datetime:
+    return datetime.now(WIB)
+
+
 def build_attendance_record(method: str, nim: str, **extra) -> dict:
     now = datetime.now()
     record = {
@@ -134,6 +156,64 @@ def build_attendance_record(method: str, nim: str, **extra) -> dict:
     }
     record.update(extra)
     return record
+
+
+def build_dosen_profile(row: dict) -> dict:
+    return {
+        "nip": row["nip"],
+        "staffId": row["nip"],
+        "fullName": row.get("nama") or "",
+        "email": row.get("email") or "",
+        "phoneNumber": row.get("no_hp") or "",
+        "role": "Dosen",
+    }
+
+
+def build_jadwal_dosen(row: dict) -> dict:
+    kelas = row.get("kelas") or {}
+    mata_kuliah = row.get("mata_kuliah") or {}
+    ruangan = row.get("ruangan") or {}
+    return {
+        "jadwal_id": row["id"],
+        "course_code": mata_kuliah.get("kode"),
+        "course_name": mata_kuliah.get("nama"),
+        "sks": mata_kuliah.get("sks"),
+        "kelas_id": row["kelas_id"],
+        "kelas": kelas.get("nama"),
+        "prodi": kelas.get("program_studi_kode"),
+        "hari": row["hari"],
+        "day_of_week": HARI_KE_ANGKA.get(row["hari"]),
+        "start_time": str((row.get("mulai") or {}).get("jam_mulai") or "")[:5],
+        "end_time": str((row.get("selesai") or {}).get("jam_selesai") or "")[:5],
+        "room": ruangan.get("nama") or ruangan.get("kode"),
+        "semester": row["semester"],
+    }
+
+
+def new_counts() -> Dict[str, int]:
+    return {status_name: 0 for status_name in STATUS_KEHADIRAN}
+
+
+def count_attendance(student_nims: List[str], status_by_nim: Dict[str, str]) -> Dict[str, int]:
+    """Hitung status satu sesi. Mahasiswa kelas tanpa catatan kehadiran dihitung alfa."""
+    counts = new_counts()
+    for nim in student_nims:
+        counts[status_by_nim.get(nim, "alfa")] += 1
+    return counts
+
+
+def add_counts(total: Dict[str, int], counts: Dict[str, int]) -> None:
+    for status_name in STATUS_KEHADIRAN:
+        total[status_name] += counts[status_name]
+
+
+def build_attendance_summary(counts: Dict[str, int]) -> dict:
+    total = sum(counts.values())
+    return {
+        **counts,
+        "total": total,
+        "persentase_kehadiran": round(counts["hadir"] / total * 100) if total else 0,
+    }
 
 
 # ── Pydantic Request Models ───────────────────────────────────────────────────
@@ -152,6 +232,11 @@ class RegisterRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(..., min_length=1)
     new_password: str = Field(..., min_length=1)
+
+
+class DosenLoginRequest(BaseModel):
+    email: str = Field(..., min_length=1, max_length=150)
+    password: str = Field(..., min_length=1, max_length=128)
 
 
 class GpsAttendanceRequest(BaseModel):
@@ -208,15 +293,41 @@ def get_supabase() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
+def fetch_rows_in(
+    sb: Client,
+    table: str,
+    columns: str,
+    filter_column: str,
+    values: List[str],
+    order_by: str,
+) -> List[dict]:
+    """Baca semua baris yang cocok. Supabase memotong hasil per permintaan, jadi dibaca per halaman."""
+    if not values:
+        return []
+    rows: List[dict] = []
+    while True:
+        res = (
+            sb.table(table)
+            .select(columns, count="exact")
+            .in_(filter_column, values)
+            .order(order_by)
+            .range(len(rows), len(rows) + SUPABASE_PAGE_SIZE - 1)
+            .execute()
+        )
+        page = res.data or []
+        rows.extend(page)
+        if not page or len(rows) >= (res.count or 0):
+            return rows
+
+
 _token_store: Dict[str, str] = {}
+_dosen_token_store: Dict[str, str] = {}
 _password_store: Dict[str, str] = dict(DEFAULT_PASSWORDS)
 
 
 # ── Auth Dependency ───────────────────────────────────────────────────────────
 
-def get_current_user(
-    authorization: Annotated[Optional[str], Header()] = None,
-) -> dict:
+def extract_bearer_token(authorization: Optional[str]) -> str:
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -229,8 +340,38 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Format token tidak valid, gunakan 'Bearer <token>'",
         )
+    return parts[1]
 
-    token = parts[1]
+
+def get_current_dosen(
+    authorization: Annotated[Optional[str], Header()] = None,
+) -> dict:
+    token = extract_bearer_token(authorization)
+    nip = _dosen_token_store.get(token)
+    if not nip:
+        if token in _token_store:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Endpoint ini hanya untuk dosen.",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token tidak valid atau sudah kedaluwarsa. Silakan login kembali.",
+        )
+
+    res = get_supabase().table("dosen").select("nip, nama, email, no_hp").eq("nip", nip).execute()
+    if not res.data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Akun dosen tidak ditemukan.",
+        )
+    return build_dosen_profile(res.data[0])
+
+
+def get_current_user(
+    authorization: Annotated[Optional[str], Header()] = None,
+) -> dict:
+    token = extract_bearer_token(authorization)
     nim = _token_store.get(token)
 
     if not nim:
@@ -304,6 +445,7 @@ def create_app() -> FastAPI:
     )
 
     _token_store.clear()
+    _dosen_token_store.clear()
     _password_store.clear()
     _password_store.update(DEFAULT_PASSWORDS)
     app.state.local_pengajuan = []
@@ -405,6 +547,40 @@ def create_app() -> FastAPI:
             )
         _password_store[nim] = body.new_password
         return {"message": "Password berhasil diubah.", "nim": nim}
+
+    @app.post("/auth/dosen/login", tags=["Auth"])
+    def login_dosen(body: DosenLoginRequest):
+        if not DOSEN_DEFAULT_PASSWORD:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Login dosen belum dikonfigurasi. Isi DOSEN_DEFAULT_PASSWORD di file .env",
+            )
+
+        res = (
+            get_supabase()
+            .table("dosen")
+            .select("nip, nama, email, no_hp")
+            .eq("email", body.email.strip().lower())
+            .execute()
+        )
+        password_ok = secrets.compare_digest(
+            body.password.encode(), DOSEN_DEFAULT_PASSWORD.encode()
+        )
+        if not res.data or not password_ok:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Email atau password salah.",
+            )
+
+        dosen = res.data[0]
+        token = f"dosen_{secrets.token_urlsafe(32)}"
+        _dosen_token_store[token] = dosen["nip"]
+        return {
+            "token": token,
+            "access_token": token,
+            "token_type": "bearer",
+            **build_dosen_profile(dosen),
+        }
 
     # ── 2. API LOAD DATA MAHASISWA (TERHUBUNG KE DATABASE SUPABASE) ───────────
 
@@ -710,7 +886,107 @@ def create_app() -> FastAPI:
         user_nim = current_user["nim"]
         return [r for r in app.state.attendance_records if r.get("nim") == user_nim]
 
-    # ── 6. HEALTH CHECK ───────────────────────────────────────────────────────
+    # ── 6. DOSEN: DASHBOARD ───────────────────────────────────────────────────
+
+    @app.get("/dosen/dashboard", tags=["Dosen"])
+    def get_dosen_dashboard(current_dosen: dict = Depends(get_current_dosen)):
+        """Kelas dan jadwal dosen pada tahun ajaran aktif beserta ringkasan kehadirannya."""
+        sb = get_supabase()
+        jadwal_rows = (
+            sb.table("jadwal_kuliah")
+            .select(f"{JADWAL_DOSEN_COLUMNS}, tahun_ajaran!inner(status)")
+            .eq("dosen_nip", current_dosen["nip"])
+            .eq("tahun_ajaran.status", "aktif")
+            .execute()
+        ).data or []
+        jadwal_ids = [row["id"] for row in jadwal_rows]
+        kelas_ids = sorted({row["kelas_id"] for row in jadwal_rows})
+
+        mahasiswa_rows = fetch_rows_in(sb, "mahasiswa", "nim, kelas_id", "kelas_id", kelas_ids, "nim")
+        sesi_rows = fetch_rows_in(
+            sb, "sesi_presensi", "id, jadwal_id, tanggal, is_open", "jadwal_id", jadwal_ids, "id"
+        )
+        kehadiran_rows = fetch_rows_in(
+            sb,
+            "v_rekap_kehadiran",
+            "kehadiran_id, sesi_presensi_id, nim, status",
+            "jadwal_id",
+            jadwal_ids,
+            "kehadiran_id",
+        )
+
+        nims_by_kelas: Dict[str, List[str]] = {kelas_id: [] for kelas_id in kelas_ids}
+        for mahasiswa in mahasiswa_rows:
+            nims_by_kelas[mahasiswa["kelas_id"]].append(mahasiswa["nim"])
+        sesi_by_jadwal: Dict[str, List[dict]] = {jadwal_id: [] for jadwal_id in jadwal_ids}
+        for sesi in sesi_rows:
+            sesi_by_jadwal[sesi["jadwal_id"]].append(sesi)
+        status_by_sesi: Dict[str, Dict[str, str]] = {}
+        for kehadiran in kehadiran_rows:
+            status_by_sesi.setdefault(kehadiran["sesi_presensi_id"], {})[kehadiran["nim"]] = kehadiran["status"]
+
+        now = now_wib()
+        today = now.date().isoformat()
+        hari_ini = ANGKA_KE_HARI.get(now.isoweekday())
+        overall_counts = new_counts()
+        kelas_items: Dict[str, dict] = {}
+        kelas_counts: Dict[str, Dict[str, int]] = {}
+        jadwal_items = []
+
+        for row in jadwal_rows:
+            jadwal = build_jadwal_dosen(row)
+            student_nims = nims_by_kelas[row["kelas_id"]]
+            sessions = sesi_by_jadwal[row["id"]]
+            counts = new_counts()
+            for sesi in sessions:
+                add_counts(counts, count_attendance(student_nims, status_by_sesi.get(sesi["id"], {})))
+
+            jadwal_items.append({
+                **jadwal,
+                "hari_ini": row["hari"] == hari_ini,
+                "jumlah_mahasiswa": len(student_nims),
+                "jumlah_sesi": len(sessions),
+                "sesi_terakhir": max((sesi["tanggal"] for sesi in sessions), default=None),
+                "sesi_aktif_id": next(
+                    (sesi["id"] for sesi in sessions if sesi["is_open"] and sesi["tanggal"] == today),
+                    None,
+                ),
+                "ringkasan_kehadiran": build_attendance_summary(counts),
+            })
+
+            kelas_item = kelas_items.setdefault(row["kelas_id"], {
+                "kelas_id": row["kelas_id"],
+                "kelas": jadwal["kelas"],
+                "prodi": jadwal["prodi"],
+                "jumlah_mahasiswa": len(student_nims),
+                "jumlah_jadwal": 0,
+                "jumlah_sesi": 0,
+            })
+            kelas_item["jumlah_jadwal"] += 1
+            kelas_item["jumlah_sesi"] += len(sessions)
+            add_counts(kelas_counts.setdefault(row["kelas_id"], new_counts()), counts)
+            add_counts(overall_counts, counts)
+
+        jadwal_items.sort(key=lambda item: (item["day_of_week"] or 0, item["start_time"]))
+        return {
+            "dosen": current_dosen,
+            "tanggal": today,
+            "hari": hari_ini,
+            "total_kelas": len(kelas_items),
+            "total_jadwal": len(jadwal_items),
+            "total_mahasiswa": len(mahasiswa_rows),
+            "ringkasan_kehadiran": build_attendance_summary(overall_counts),
+            "kelas": sorted(
+                (
+                    {**item, "ringkasan_kehadiran": build_attendance_summary(kelas_counts[kelas_id])}
+                    for kelas_id, item in kelas_items.items()
+                ),
+                key=lambda item: item["kelas"] or "",
+            ),
+            "jadwal": jadwal_items,
+        }
+
+    # ── 7. HEALTH CHECK ───────────────────────────────────────────────────────
 
     @app.get("/health", tags=["System"])
     def health_check():
