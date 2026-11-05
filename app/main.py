@@ -9,6 +9,7 @@ import secrets
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Dict, List, Optional
+from uuid import UUID
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
@@ -318,6 +319,16 @@ def fetch_rows_in(
         rows.extend(page)
         if not page or len(rows) >= (res.count or 0):
             return rows
+
+
+def get_jadwal_milik_dosen(sb: Client, jadwal_id: UUID, nip: str) -> dict:
+    res = sb.table("jadwal_kuliah").select(JADWAL_DOSEN_COLUMNS).eq("id", str(jadwal_id)).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Jadwal tidak ditemukan.")
+    jadwal = res.data[0]
+    if jadwal["dosen_nip"] != nip:
+        raise HTTPException(status_code=403, detail="Jadwal ini bukan jadwal Anda.")
+    return jadwal
 
 
 _token_store: Dict[str, str] = {}
@@ -886,7 +897,7 @@ def create_app() -> FastAPI:
         user_nim = current_user["nim"]
         return [r for r in app.state.attendance_records if r.get("nim") == user_nim]
 
-    # ── 6. DOSEN: DASHBOARD ───────────────────────────────────────────────────
+    # ── 6. DOSEN: DASHBOARD, DAFTAR KEHADIRAN ─────────────────────────────────
 
     @app.get("/dosen/dashboard", tags=["Dosen"])
     def get_dosen_dashboard(current_dosen: dict = Depends(get_current_dosen)):
@@ -984,6 +995,79 @@ def create_app() -> FastAPI:
                 key=lambda item: item["kelas"] or "",
             ),
             "jadwal": jadwal_items,
+        }
+
+    @app.get("/dosen/jadwal/{jadwal_id}/kehadiran", tags=["Dosen"])
+    def get_kehadiran_jadwal(
+        jadwal_id: UUID,
+        tanggal: Optional[date] = Query(
+            None, description="Tanggal sesi (YYYY-MM-DD). Kosong = sesi terakhir jadwal ini."
+        ),
+        current_dosen: dict = Depends(get_current_dosen),
+    ):
+        """Daftar mahasiswa kelas pada jadwal ini dan status kehadirannya di satu sesi."""
+        sb = get_supabase()
+        jadwal = build_jadwal_dosen(get_jadwal_milik_dosen(sb, jadwal_id, current_dosen["nip"]))
+
+        sesi_query = sb.table("sesi_presensi").select("id, tanggal, is_open").eq("jadwal_id", str(jadwal_id))
+        if tanggal is not None:
+            sesi_query = sesi_query.eq("tanggal", tanggal.isoformat())
+        sesi_rows = sesi_query.order("tanggal", desc=True).limit(1).execute().data
+        if not sesi_rows:
+            raise HTTPException(
+                status_code=404,
+                detail="Belum ada sesi presensi untuk jadwal dan tanggal ini.",
+            )
+        sesi = sesi_rows[0]
+
+        mahasiswa_rows = fetch_rows_in(
+            sb, "mahasiswa", "nim, nama_lengkap", "kelas_id", [jadwal["kelas_id"]], "nim"
+        )
+        kehadiran_rows = fetch_rows_in(
+            sb,
+            "kehadiran",
+            "nim, status, jam_masuk, catatan, "
+            "pengajuan_ketidakhadiran(alasan, dokumen_path, status_pengajuan)",
+            "sesi_presensi_id",
+            [sesi["id"]],
+            "nim",
+        )
+        kehadiran_by_nim = {row["nim"]: row for row in kehadiran_rows}
+
+        students = []
+        for mahasiswa in mahasiswa_rows:
+            kehadiran = kehadiran_by_nim.get(mahasiswa["nim"]) or {}
+            pengajuan = kehadiran.get("pengajuan_ketidakhadiran") or {}
+            dokumen_path = pengajuan.get("dokumen_path")
+            jam_masuk = kehadiran.get("jam_masuk")
+            students.append({
+                "nim": mahasiswa["nim"],
+                "name": mahasiswa["nama_lengkap"],
+                "className": jadwal["kelas"],
+                "status": kehadiran.get("status", "alfa"),
+                "checkInTime": str(jam_masuk)[:5] if jam_masuk else None,
+                "note": pengajuan.get("alasan") or kehadiran.get("catatan"),
+                "document": (
+                    {"fileName": dokumen_path.rsplit("/", 1)[-1], "path": dokumen_path}
+                    if dokumen_path
+                    else None
+                ),
+                "pengajuan_status": pengajuan.get("status_pengajuan"),
+            })
+
+        counts = count_attendance(
+            [student["nim"] for student in students],
+            {student["nim"]: student["status"] for student in students},
+        )
+        return {
+            "jadwal_id": jadwal["jadwal_id"],
+            "sesi_presensi_id": sesi["id"],
+            "courseName": jadwal["course_name"],
+            "className": jadwal["kelas"],
+            "date": sesi["tanggal"],
+            "is_open": sesi["is_open"],
+            "summary": build_attendance_summary(counts),
+            "students": students,
         }
 
     # ── 7. HEALTH CHECK ───────────────────────────────────────────────────────
