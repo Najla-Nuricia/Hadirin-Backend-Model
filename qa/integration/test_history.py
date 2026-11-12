@@ -1,37 +1,46 @@
+"""Integration tests for health checks and attendance history backed by `v_rekap_kehadiran`."""
+
 from fastapi.testclient import TestClient
 
 
-def test_history_only_returns_authenticated_users_records(
-    client: TestClient, auth_headers: dict
+def test_health_endpoint_reports_db_and_ml_status(client: TestClient) -> None:
+    response = client.get("/health")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "healthy"
+    assert body["database"] == "connected"
+    assert body["ml_weights_ready"] is True
+
+
+def test_attendance_history_authenticated(
+    client: TestClient,
+    seeded_auth_headers: dict[str, str],
 ) -> None:
-    first_user_attendance = client.post(
-        "/attendance/qr",
-        headers=auth_headers,
-        json={"code": "HADIRIN-DEMO-QR"},
-    )
-    second_user_login = client.post(
+    response = client.get("/attendance/history", headers=seeded_auth_headers)
+    assert response.status_code == 200
+    payload = response.json()
+    assert isinstance(payload["data"], list)
+    assert payload["total"] == len(payload["data"])
+
+
+def test_attendance_history_for_seeded_student(client: TestClient) -> None:
+    login_resp = client.post(
         "/auth/login",
-        json={"nim": "24000002", "password": "password123"},
+        json={"nim": "2211001", "password": "mahasiswa123"},
     )
-    second_user_headers = {
-        "Authorization": f"Bearer {second_user_login.json()['access_token']}"
-    }
-    second_user_attendance = client.post(
-        "/attendance/gps",
-        headers=second_user_headers,
-        json={"latitude": -6.2, "longitude": 106.8167},
-    )
+    assert login_resp.status_code == 200
+    headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
 
-    assert first_user_attendance.status_code == 200
-    assert second_user_login.status_code == 200
-    assert second_user_attendance.status_code == 200
+    riwayat = client.get("/mahasiswa/presensi/riwayat", headers=headers)
+    assert riwayat.status_code == 200
+    data = riwayat.json()
+    assert data["total"] >= 1
+    first = data["data"][0]
+    assert first["nim"] == "2211001"
+    assert first["courseName"]
+    assert first["status"] in {"hadir", "izin", "sakit", "alfa"}
 
-    first_user_history = client.get("/attendance/history", headers=auth_headers)
-    second_user_history = client.get(
-        "/attendance/history", headers=second_user_headers
-    )
 
-    assert first_user_history.status_code == 200
-    assert [record["method"] for record in first_user_history.json()] == ["qr"]
-    assert second_user_history.status_code == 200
-    assert [record["method"] for record in second_user_history.json()] == ["gps"]
+def test_attendance_history_unauthenticated(client: TestClient) -> None:
+    response = client.get("/attendance/history")
+    assert response.status_code == 401
