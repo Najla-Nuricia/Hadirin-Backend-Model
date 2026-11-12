@@ -56,7 +56,7 @@ HARI_KE_ANGKA = {
 ANGKA_KE_HARI = {v: k for k, v in HARI_KE_ANGKA.items()}
 JENIS_PENGAJUAN_PATTERN = "^(izin|sakit|kompensasi)$"
 
-# Akun yang dipakai aplikasi Flutter dan tes API. Password tidak ada di tabel mahasiswa.
+# Akun tes API yang profilnya tidak dibaca dari database.
 DEMO_ACCOUNTS = {
     "24000001": {
         "name": "Demo Student One",
@@ -72,14 +72,9 @@ DEMO_ACCOUNTS = {
         "phone": "081200000002",
         "prodi": "D4-TI",
     },
-    "2341720001": {
-        "name": "Mahasiswa Demo",
-        "class_name": "3F-TI",
-        "email": "2341720001@student.polinema.ac.id",
-        "phone": "081234567890",
-        "prodi": "D4-TI",
-    },
 }
+# Password tidak ada di tabel mahasiswa. 2341720001 adalah akun demo Flutter; profil dan
+# kelasnya tetap dibaca dari database supaya jadwal dan validasi QR memakai kelas aslinya.
 DEFAULT_PASSWORDS = {
     "24000001": "password123",
     "24000002": "password123",

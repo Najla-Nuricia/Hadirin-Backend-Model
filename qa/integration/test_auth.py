@@ -62,28 +62,33 @@ def test_login_with_flutter_demo_account(client: TestClient) -> None:
     body = response.json()
     assert body["name"] == "Mahasiswa Demo"
     assert body["fullName"] == "Mahasiswa Demo"
-    assert body["className"] == "3F-TI"
-    assert body["phoneNumber"] == "081234567890"
+    assert body["className"] == "TI-3A"
     assert body["access_token"].startswith("jwt_")
 
 
 def test_flutter_demo_profile_uses_frontend_field_names(
-    client: TestClient,
+    client: TestClient, student_headers: dict
 ) -> None:
-    login = client.post(
-        "/auth/login",
-        json={"nim": "2341720001", "password": "mahasiswa123"},
-    )
-    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
-
-    response = client.get("/mahasiswa/me", headers=headers)
+    response = client.get("/mahasiswa/me", headers=student_headers)
 
     assert response.status_code == 200
     body = response.json()
     assert body["fullName"] == "Mahasiswa Demo"
     assert body["nim"] == "2341720001"
-    assert body["phoneNumber"] == "081234567890"
+    assert body["phoneNumber"] == body["no_hp"]
     assert body["role"] == "Mahasiswa"
+
+
+def test_flutter_demo_account_loads_schedule_of_its_database_class(
+    client: TestClient, student_headers: dict
+) -> None:
+    profile = client.get("/mahasiswa/me", headers=student_headers).json()
+    response = client.get("/mahasiswa/jadwal", headers=student_headers)
+
+    assert profile["kelas_id"]
+    assert response.status_code == 200
+    assert response.json()
+    assert {schedule["kelas"] for schedule in response.json()} == {"TI-3A"}
 
 
 def test_change_password_then_login_with_new_password(client: TestClient) -> None:

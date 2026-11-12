@@ -27,6 +27,7 @@ def auth_headers(client: TestClient) -> dict[str, str]:
 
 @pytest.fixture
 def student_headers(client: TestClient) -> dict[str, str]:
+    """Mahasiswa kelas TI-3A yang profilnya dibaca dari database."""
     response = client.post(
         "/auth/login",
         json={"nim": "2341720001", "password": "mahasiswa123"},
