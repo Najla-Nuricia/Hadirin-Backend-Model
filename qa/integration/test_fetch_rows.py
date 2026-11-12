@@ -1,8 +1,8 @@
+"""Tests for Supabase paginated `BaseRepository.fetch_rows_in` helper."""
+
 from types import SimpleNamespace
 
-import pytest
-
-from app import main
+from app.db.repositories.base import BaseRepository
 
 
 class FakeQuery:
@@ -28,7 +28,8 @@ class FakeQuery:
 
     def execute(self) -> SimpleNamespace:
         return SimpleNamespace(
-            data=self._rows[self._start : self._end + 1], count=len(self._rows)
+            data=self._rows[self._start : self._end + 1],
+            count=len(self._rows),
         )
 
 
@@ -42,13 +43,14 @@ class FakeSupabase:
         return FakeQuery(list(self._rows))
 
 
-def test_fetch_rows_in_reads_every_page(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(main, "SUPABASE_PAGE_SIZE", 2)
+def test_fetch_rows_in_reads_every_page() -> None:
     rows = [{"id": number, "kelas_id": "a"} for number in (5, 3, 1, 4, 2)]
     rows.append({"id": 6, "kelas_id": "b"})
     sb = FakeSupabase(rows)
 
-    result = main.fetch_rows_in(sb, "mahasiswa", "id, kelas_id", "kelas_id", ["a"], "id")
+    result = BaseRepository.fetch_rows_in(
+        sb, "mahasiswa", "id, kelas_id", "kelas_id", ["a"], "id", page_size=2
+    )
 
     assert [row["id"] for row in result] == [1, 2, 3, 4, 5]
     assert sb.requests == 3
@@ -57,5 +59,10 @@ def test_fetch_rows_in_reads_every_page(monkeypatch: pytest.MonkeyPatch) -> None
 def test_fetch_rows_in_skips_request_without_filter_values() -> None:
     sb = FakeSupabase([{"id": 1, "kelas_id": "a"}])
 
-    assert main.fetch_rows_in(sb, "mahasiswa", "id", "kelas_id", [], "id") == []
+    assert (
+        BaseRepository.fetch_rows_in(
+            sb, "mahasiswa", "id", "kelas_id", [], "id", page_size=2
+        )
+        == []
+    )
     assert sb.requests == 0

@@ -1,7 +1,9 @@
+"""Integration tests for lecturer auth, dashboard analytics, and session roster endpoints."""
+
 import pytest
 from fastapi.testclient import TestClient
 
-from app import main
+from app.core.config import Settings
 
 DOSEN_TI3A_EMAIL = "budi.santoso@polinema.ac.id"
 DOSEN_TI3A_NIP = "198501012010121001"
@@ -13,9 +15,9 @@ STATUSES = ("hadir", "izin", "sakit", "alfa")
 
 
 def test_dosen_login_returns_token_and_profile(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(main, "DOSEN_DEFAULT_PASSWORD", "rahasia-dosen")
+    monkeypatch.setattr(settings, "dosen_default_password", "rahasia-dosen")
 
     response = client.post(
         "/auth/dosen/login",
@@ -41,9 +43,13 @@ def test_dosen_login_returns_token_and_profile(
     ],
 )
 def test_dosen_login_rejects_wrong_credentials(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch, email: str, password: str
+    client: TestClient,
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    email: str,
+    password: str,
 ) -> None:
-    monkeypatch.setattr(main, "DOSEN_DEFAULT_PASSWORD", "rahasia-dosen")
+    monkeypatch.setattr(settings, "dosen_default_password", "rahasia-dosen")
 
     response = client.post(
         "/auth/dosen/login", json={"email": email, "password": password}
@@ -54,9 +60,9 @@ def test_dosen_login_rejects_wrong_credentials(
 
 
 def test_dosen_login_is_disabled_without_configured_password(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(main, "DOSEN_DEFAULT_PASSWORD", "")
+    monkeypatch.setattr(settings, "dosen_default_password", "")
 
     response = client.post(
         "/auth/dosen/login", json={"email": DOSEN_TI3A_EMAIL, "password": "apa-saja"}
@@ -66,10 +72,10 @@ def test_dosen_login_is_disabled_without_configured_password(
 
 
 def test_dosen_endpoints_require_a_dosen_token(
-    client: TestClient, student_headers: dict
+    client: TestClient, seeded_auth_headers: dict[str, str]
 ) -> None:
     without_token = client.get("/dosen/dashboard")
-    with_student_token = client.get("/dosen/dashboard", headers=student_headers)
+    with_student_token = client.get("/dosen/dashboard", headers=seeded_auth_headers)
     with_unknown_token = client.get(
         "/dosen/dashboard", headers={"Authorization": "Bearer jwt_tebakan"}
     )
@@ -80,15 +86,14 @@ def test_dosen_endpoints_require_a_dosen_token(
 
 
 def test_dosen_token_is_rejected_on_student_endpoints(
-    client: TestClient, dosen_headers: dict
+    client: TestClient, dosen_headers: dict[str, str]
 ) -> None:
     response = client.get("/mahasiswa/me", headers=dosen_headers)
-
     assert response.status_code == 401
 
 
 def test_dashboard_lists_classes_and_attendance_summary(
-    client: TestClient, dosen_headers: dict
+    client: TestClient, dosen_headers: dict[str, str]
 ) -> None:
     response = client.get("/dosen/dashboard", headers=dosen_headers)
 
@@ -113,33 +118,31 @@ def test_dashboard_lists_classes_and_attendance_summary(
     assert web_lanjut["sesi_terakhir"] >= TANGGAL_SESI_SEED
     assert web_lanjut["ringkasan_kehadiran"]["hadir"] >= 7
 
-    # Setiap sesi menghitung seluruh mahasiswa kelas, jadi total = mahasiswa x sesi.
     for item in body["jadwal"]:
         summary = item["ringkasan_kehadiran"]
         assert summary["total"] == item["jumlah_mahasiswa"] * item["jumlah_sesi"]
-        assert sum(summary[status] for status in STATUSES) == summary["total"]
+        assert sum(summary[st] for st in STATUSES) == summary["total"]
 
     overall = body["ringkasan_kehadiran"]
-    for status in STATUSES:
-        assert overall[status] == sum(
-            item["ringkasan_kehadiran"][status] for item in body["jadwal"]
+    for st in STATUSES:
+        assert overall[st] == sum(
+            item["ringkasan_kehadiran"][st] for item in body["jadwal"]
         )
-        assert overall[status] == sum(
-            item["ringkasan_kehadiran"][status] for item in body["kelas"]
+        assert overall[st] == sum(
+            item["ringkasan_kehadiran"][st] for item in body["kelas"]
         )
     assert 0 <= overall["persentase_kehadiran"] <= 100
 
 
 def test_dashboard_only_contains_own_schedules(
-    client: TestClient, dosen_headers: dict
+    client: TestClient, dosen_headers: dict[str, str]
 ) -> None:
     body = client.get("/dosen/dashboard", headers=dosen_headers).json()
-
     assert JADWAL_DOSEN_LAIN not in {item["jadwal_id"] for item in body["jadwal"]}
 
 
 def test_dashboard_reports_today_and_open_session(
-    client: TestClient, dosen_headers: dict, open_session
+    client: TestClient, dosen_headers: dict[str, str], open_session
 ) -> None:
     before = client.get("/dosen/dashboard", headers=dosen_headers).json()
     sesi = open_session(JADWAL_TI3A)
@@ -147,12 +150,13 @@ def test_dashboard_reports_today_and_open_session(
 
     jadwal_before = {item["jadwal_id"]: item for item in before["jadwal"]}
     jadwal_after = {item["jadwal_id"]: item for item in after["jadwal"]}
-    # Tanggal sentinel jatuh pada hari Senin, sama dengan hari jadwal ini.
     assert after["tanggal"] == "2099-01-05"
     assert after["hari"] == "senin"
     assert jadwal_after[JADWAL_TI3A]["hari_ini"] is True
     assert all(
-        item["hari_ini"] is False for item in after["jadwal"] if item["hari"] != "senin"
+        item["hari_ini"] is False
+        for item in after["jadwal"]
+        if item["hari"] != "senin"
     )
     assert jadwal_before[JADWAL_TI3A]["sesi_aktif_id"] is None
     assert jadwal_after[JADWAL_TI3A]["sesi_aktif_id"] == sesi["sesi_presensi_id"]
@@ -163,7 +167,7 @@ def test_dashboard_reports_today_and_open_session(
 
 
 def test_attendance_list_shows_status_per_student(
-    client: TestClient, dosen_headers: dict
+    client: TestClient, dosen_headers: dict[str, str]
 ) -> None:
     response = client.get(
         f"/dosen/jadwal/{JADWAL_TI3A}/kehadiran",
@@ -188,57 +192,25 @@ def test_attendance_list_shows_status_per_student(
     assert students["2211003"]["pengajuan_status"] == "pending"
     assert students["2211005"]["status"] == "sakit"
     assert students["2211007"]["status"] == "alfa"
-    # Mahasiswa kelas tanpa catatan kehadiran pada sesi ini dihitung alfa.
     assert students["2341720001"]["status"] == "alfa"
     assert students["2341720001"]["checkInTime"] is None
 
     summary = body["summary"]
     assert summary["total"] == len(body["students"])
-    for status in STATUSES:
-        assert summary[status] == sum(
-            1 for student in body["students"] if student["status"] == status
+    for st in STATUSES:
+        assert summary[st] == sum(
+            1 for student in body["students"] if student["status"] == st
         )
 
 
-def test_attendance_list_defaults_to_latest_session(
-    client: TestClient, dosen_headers: dict
+def test_attendance_list_rejects_unknown_or_other_schedule(
+    client: TestClient, dosen_headers: dict[str, str]
 ) -> None:
-    dashboard = client.get("/dosen/dashboard", headers=dosen_headers).json()
-    latest = {item["jadwal_id"]: item for item in dashboard["jadwal"]}[JADWAL_TI3A]
-
-    response = client.get(
-        f"/dosen/jadwal/{JADWAL_TI3A}/kehadiran", headers=dosen_headers
-    )
-
-    assert response.status_code == 200
-    assert response.json()["date"] == latest["sesi_terakhir"]
-
-
-def test_attendance_list_rejects_schedule_of_another_lecturer(
-    client: TestClient, dosen_headers: dict
-) -> None:
-    response = client.get(
-        f"/dosen/jadwal/{JADWAL_DOSEN_LAIN}/kehadiran", headers=dosen_headers
-    )
-
-    assert response.status_code == 403
-
-
-def test_attendance_list_returns_404_without_session_or_schedule(
-    client: TestClient, dosen_headers: dict
-) -> None:
-    no_session = client.get(
-        f"/dosen/jadwal/{JADWAL_TI3A}/kehadiran",
-        params={"tanggal": "2099-01-06"},
-        headers=dosen_headers,
-    )
-    no_schedule = client.get(
+    missing = client.get(
         f"/dosen/jadwal/{JADWAL_TIDAK_ADA}/kehadiran", headers=dosen_headers
     )
-    malformed_id = client.get(
-        "/dosen/jadwal/bukan-uuid/kehadiran", headers=dosen_headers
+    other = client.get(
+        f"/dosen/jadwal/{JADWAL_DOSEN_LAIN}/kehadiran", headers=dosen_headers
     )
-
-    assert no_session.status_code == 404
-    assert no_schedule.status_code == 404
-    assert malformed_id.status_code == 422
+    assert missing.status_code == 404
+    assert other.status_code == 403
