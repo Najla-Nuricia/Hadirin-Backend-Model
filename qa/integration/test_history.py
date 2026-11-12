@@ -1,5 +1,7 @@
 from fastapi.testclient import TestClient
 
+from app.main import GEOFENCE_CENTER
+
 
 def test_history_only_returns_authenticated_users_records(
     client: TestClient, student_headers: dict, open_session
@@ -16,10 +18,11 @@ def test_history_only_returns_authenticated_users_records(
     second_user_headers = {
         "Authorization": f"Bearer {second_user_login.json()['access_token']}"
     }
+    latitude, longitude = GEOFENCE_CENTER
     second_user_attendance = client.post(
         "/attendance/gps",
         headers=second_user_headers,
-        json={"latitude": -6.2, "longitude": 106.8167},
+        json={"latitude": latitude, "longitude": longitude},
     )
 
     assert first_user_attendance.status_code == 200

@@ -22,15 +22,21 @@ load_dotenv()
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 
-DEMO_CAMPUS_LOCATION = (-6.2, 106.8167)
-MAX_GPS_DISTANCE_METERS = 200
-
 
 def env_number(name: str, default: float) -> float:
     """Baca angka dari environment; nilai kosong dianggap tidak diisi."""
     raw = os.environ.get(name, "").strip()
     return float(raw) if raw else default
 
+
+# Geofence presensi. Nilai bawaan adalah titik demo; koordinat kampus diisi lewat .env.
+GEOFENCE_NAME = os.environ.get("GEOFENCE_NAME", "").strip() or "Area Kampus"
+GEOFENCE_CENTER = (
+    env_number("GEOFENCE_LATITUDE", -6.2),
+    env_number("GEOFENCE_LONGITUDE", 106.8167),
+)
+GEOFENCE_RADIUS_METERS = env_number("GEOFENCE_RADIUS_METERS", 200)
+GEOFENCE_MAX_ACCURACY_METERS = env_number("GEOFENCE_MAX_ACCURACY_METERS", 100)
 
 # Masa berlaku satu kode QR; aplikasi dosen meminta kode baru sebelum habis.
 QR_TOKEN_TTL_SECONDS = int(env_number("QR_TOKEN_TTL_SECONDS", 30))
@@ -270,8 +276,10 @@ class DosenLoginRequest(BaseModel):
 
 
 class GpsAttendanceRequest(BaseModel):
-    latitude: float
-    longitude: float
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    # Radius ketidakpastian posisi dari perangkat, dalam meter.
+    accuracy: Optional[float] = Field(default=None, ge=0)
 
 
 class QrAttendanceRequest(BaseModel):
@@ -936,15 +944,32 @@ def create_app() -> FastAPI:
 
     @app.post("/attendance/gps", tags=["Presensi"])
     def absen_gps(body: GpsAttendanceRequest, current_user: dict = Depends(get_current_user)):
-        dist = calculate_distance(body.latitude, body.longitude, DEMO_CAMPUS_LOCATION[0], DEMO_CAMPUS_LOCATION[1])
-        if dist > MAX_GPS_DISTANCE_METERS:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Terlalu jauh dari kampus ({dist:.0f}m).")
+        if body.accuracy is not None and body.accuracy > GEOFENCE_MAX_ACCURACY_METERS:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Akurasi GPS terlalu rendah (±{body.accuracy:.0f} m). "
+                    "Aktifkan lokasi akurasi tinggi lalu coba lagi."
+                ),
+            )
+
+        dist = calculate_distance(body.latitude, body.longitude, GEOFENCE_CENTER[0], GEOFENCE_CENTER[1])
+        if dist > GEOFENCE_RADIUS_METERS:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Lokasi di luar area {GEOFENCE_NAME}: {dist:.0f} m dari titik presensi, "
+                    f"batas {GEOFENCE_RADIUS_METERS:.0f} m."
+                ),
+            )
 
         record = build_attendance_record(
             "gps",
             current_user["nim"],
             jarak_meter=round(dist, 2),
             distance_meters=int(round(dist)),
+            area=GEOFENCE_NAME,
+            radius_meters=GEOFENCE_RADIUS_METERS,
         )
         app.state.attendance_records.append(record)
         return {**record, "message": "Absen GPS berhasil ✅"}
