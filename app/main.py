@@ -23,8 +23,17 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 
 DEMO_CAMPUS_LOCATION = (-6.2, 106.8167)
-DEMO_VALID_QR_CODE = "HADIRIN-DEMO-QR"
 MAX_GPS_DISTANCE_METERS = 200
+
+
+def env_number(name: str, default: float) -> float:
+    """Baca angka dari environment; nilai kosong dianggap tidak diisi."""
+    raw = os.environ.get(name, "").strip()
+    return float(raw) if raw else default
+
+
+# Masa berlaku satu kode QR; aplikasi dosen meminta kode baru sebelum habis.
+QR_TOKEN_TTL_SECONDS = int(env_number("QR_TOKEN_TTL_SECONDS", 30))
 
 # Tabel dosen belum menyimpan password, jadi login dosen memakai satu password dari .env.
 # Kosong berarti login dosen dimatikan.
@@ -41,6 +50,10 @@ JADWAL_DOSEN_COLUMNS = (
     "mata_kuliah(kode, nama, sks), kelas(nama, program_studi_kode), ruangan(kode, nama), "
     "mulai:sesi_kuliah!jadwal_kuliah_sesi_mulai_fkey(jam_mulai), "
     "selesai:sesi_kuliah!jadwal_kuliah_sesi_selesai_fkey(jam_selesai)"
+)
+SESI_PRESENSI_COLUMNS = (
+    "id, jadwal_id, tanggal, is_open, qr_token, qr_expires_at, "
+    "jadwal_kuliah(dosen_nip, kelas_id, kelas(nama), mata_kuliah(nama))"
 )
 
 # Mapping hari Indonesia -> nomor (1: Senin s/d 7: Minggu)
@@ -141,7 +154,7 @@ def now_wib() -> datetime:
 
 
 def build_attendance_record(method: str, nim: str, **extra) -> dict:
-    now = datetime.now()
+    now = now_wib()
     record = {
         "method": method,
         "nim": nim,
@@ -212,6 +225,27 @@ def build_attendance_summary(counts: Dict[str, int]) -> dict:
     }
 
 
+def new_qr_fields(now: datetime) -> dict:
+    return {
+        "qr_token": secrets.token_urlsafe(24),
+        "qr_expires_at": (now + timedelta(seconds=QR_TOKEN_TTL_SECONDS)).isoformat(),
+    }
+
+
+def build_sesi_presensi(sesi: dict, *, course_name: Optional[str], class_name: Optional[str]) -> dict:
+    return {
+        "sesi_presensi_id": sesi["id"],
+        "jadwal_id": sesi["jadwal_id"],
+        "tanggal": sesi["tanggal"],
+        "course_name": course_name,
+        "kelas": class_name,
+        "is_open": sesi["is_open"],
+        "qr_code": sesi.get("qr_token"),
+        "qr_expires_at": sesi.get("qr_expires_at"),
+        "qr_ttl_seconds": QR_TOKEN_TTL_SECONDS,
+    }
+
+
 # ── Pydantic Request Models ───────────────────────────────────────────────────
 
 class LoginRequest(BaseModel):
@@ -241,7 +275,7 @@ class GpsAttendanceRequest(BaseModel):
 
 
 class QrAttendanceRequest(BaseModel):
-    code: str
+    code: str = Field(..., min_length=1, max_length=128)
 
 
 class MahasiswaCreate(BaseModel):
@@ -324,6 +358,43 @@ def get_jadwal_milik_dosen(sb: Client, jadwal_id: UUID, nip: str) -> dict:
     if jadwal["dosen_nip"] != nip:
         raise HTTPException(status_code=403, detail="Jadwal ini bukan jadwal Anda.")
     return jadwal
+
+
+def get_sesi_milik_dosen(sb: Client, sesi_id: UUID, nip: str) -> dict:
+    res = sb.table("sesi_presensi").select(SESI_PRESENSI_COLUMNS).eq("id", str(sesi_id)).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Sesi presensi tidak ditemukan.")
+    sesi = res.data[0]
+    if (sesi.get("jadwal_kuliah") or {}).get("dosen_nip") != nip:
+        raise HTTPException(status_code=403, detail="Sesi presensi ini bukan milik Anda.")
+    return sesi
+
+
+def validate_qr_code(sb: Client, code: str, student: dict) -> dict:
+    """Kode QR sah bila milik sesi yang terbuka, belum kedaluwarsa, dan untuk kelas mahasiswa."""
+    res = sb.table("sesi_presensi").select(SESI_PRESENSI_COLUMNS).eq("qr_token", code).execute()
+    if not res.data:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="QR Code tidak valid atau sudah diganti. Pindai QR terbaru.",
+        )
+    sesi = res.data[0]
+    if not sesi["is_open"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sesi presensi sudah ditutup.")
+
+    expires_at = sesi.get("qr_expires_at")
+    if not expires_at or datetime.fromisoformat(expires_at) <= now_wib():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="QR Code sudah kedaluwarsa. Pindai QR terbaru.",
+        )
+
+    kelas_id = student.get("kelas_id")
+    if not kelas_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Akun Anda belum terdaftar di kelas.")
+    if kelas_id != (sesi.get("jadwal_kuliah") or {}).get("kelas_id"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="QR Code ini bukan untuk kelas Anda.")
+    return sesi
 
 
 _token_store: Dict[str, str] = {}
@@ -880,10 +951,22 @@ def create_app() -> FastAPI:
 
     @app.post("/attendance/qr", tags=["Presensi"])
     def absen_qr(body: QrAttendanceRequest, current_user: dict = Depends(get_current_user)):
-        if body.code != DEMO_VALID_QR_CODE:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="QR Code tidak valid.")
+        sesi = validate_qr_code(get_supabase(), body.code, current_user)
 
-        record = build_attendance_record("qr", current_user["nim"], code=body.code)
+        nim = current_user["nim"]
+        for existing in app.state.attendance_records:
+            if existing.get("nim") == nim and existing.get("sesi_presensi_id") == sesi["id"]:
+                return {**existing, "message": "Presensi QR untuk sesi ini sudah tercatat."}
+
+        jadwal = sesi.get("jadwal_kuliah") or {}
+        record = build_attendance_record(
+            "qr",
+            nim,
+            courseName=(jadwal.get("mata_kuliah") or {}).get("nama") or "Presensi Kelas",
+            sesi_presensi_id=sesi["id"],
+            jadwal_id=sesi["jadwal_id"],
+            kelas=(jadwal.get("kelas") or {}).get("nama"),
+        )
         app.state.attendance_records.append(record)
         return {**record, "message": "Absen QR berhasil ✅"}
 
@@ -892,7 +975,7 @@ def create_app() -> FastAPI:
         user_nim = current_user["nim"]
         return [r for r in app.state.attendance_records if r.get("nim") == user_nim]
 
-    # ── 6. DOSEN: DASHBOARD, DAFTAR KEHADIRAN ─────────────────────────────────
+    # ── 6. DOSEN: DASHBOARD, DAFTAR KEHADIRAN, SESI PRESENSI QR ───────────────
 
     @app.get("/dosen/dashboard", tags=["Dosen"])
     def get_dosen_dashboard(current_dosen: dict = Depends(get_current_dosen)):
@@ -1064,6 +1147,75 @@ def create_app() -> FastAPI:
             "summary": build_attendance_summary(counts),
             "students": students,
         }
+
+    @app.post("/dosen/jadwal/{jadwal_id}/sesi-presensi", tags=["Dosen"])
+    def buka_sesi_presensi(jadwal_id: UUID, current_dosen: dict = Depends(get_current_dosen)):
+        """Buka sesi presensi hari ini untuk jadwal ini dan buat kode QR pertamanya."""
+        sb = get_supabase()
+        jadwal = build_jadwal_dosen(get_jadwal_milik_dosen(sb, jadwal_id, current_dosen["nip"]))
+        now = now_wib()
+        res = (
+            sb.table("sesi_presensi")
+            .upsert(
+                {
+                    "jadwal_id": str(jadwal_id),
+                    "tanggal": now.date().isoformat(),
+                    "is_open": True,
+                    "dibuka_oleh": current_dosen["nip"],
+                    **new_qr_fields(now),
+                },
+                on_conflict="jadwal_id,tanggal",
+            )
+            .execute()
+        )
+        return build_sesi_presensi(
+            res.data[0], course_name=jadwal["course_name"], class_name=jadwal["kelas"]
+        )
+
+    @app.post("/dosen/sesi-presensi/{sesi_id}/qr", tags=["Dosen"])
+    def perbarui_qr_sesi(sesi_id: UUID, current_dosen: dict = Depends(get_current_dosen)):
+        """Ganti kode QR sesi yang sedang terbuka. Kode sebelumnya langsung tidak berlaku."""
+        sb = get_supabase()
+        sesi = get_sesi_milik_dosen(sb, sesi_id, current_dosen["nip"])
+        now = now_wib()
+        closed_detail = "Sesi presensi sudah ditutup. Buka sesi baru untuk membuat QR."
+        if not sesi["is_open"] or sesi["tanggal"] != now.date().isoformat():
+            raise HTTPException(status_code=409, detail=closed_detail)
+
+        res = (
+            sb.table("sesi_presensi")
+            .update(new_qr_fields(now))
+            .eq("id", str(sesi_id))
+            .eq("is_open", True)
+            .execute()
+        )
+        if not res.data:
+            raise HTTPException(status_code=409, detail=closed_detail)
+
+        jadwal = sesi.get("jadwal_kuliah") or {}
+        return build_sesi_presensi(
+            res.data[0],
+            course_name=(jadwal.get("mata_kuliah") or {}).get("nama"),
+            class_name=(jadwal.get("kelas") or {}).get("nama"),
+        )
+
+    @app.post("/dosen/sesi-presensi/{sesi_id}/tutup", tags=["Dosen"])
+    def tutup_sesi_presensi(sesi_id: UUID, current_dosen: dict = Depends(get_current_dosen)):
+        """Tutup sesi presensi dan hapus kode QR-nya."""
+        sb = get_supabase()
+        sesi = get_sesi_milik_dosen(sb, sesi_id, current_dosen["nip"])
+        res = (
+            sb.table("sesi_presensi")
+            .update({"is_open": False, "qr_token": None, "qr_expires_at": None})
+            .eq("id", str(sesi_id))
+            .execute()
+        )
+        jadwal = sesi.get("jadwal_kuliah") or {}
+        return build_sesi_presensi(
+            res.data[0],
+            course_name=(jadwal.get("mata_kuliah") or {}).get("nama"),
+            class_name=(jadwal.get("kelas") or {}).get("nama"),
+        )
 
     # ── 7. HEALTH CHECK ───────────────────────────────────────────────────────
 

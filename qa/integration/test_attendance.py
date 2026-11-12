@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from app.main import DEMO_CAMPUS_LOCATION, DEMO_VALID_QR_CODE
+from app.main import DEMO_CAMPUS_LOCATION
 
 
 def test_attendance_with_valid_gps(client: TestClient, auth_headers: dict) -> None:
@@ -26,17 +26,6 @@ def test_gps_outside_area_is_rejected(
     )
 
     assert response.status_code == 403
-
-
-def test_attendance_with_valid_qr(client: TestClient, auth_headers: dict) -> None:
-    response = client.post(
-        "/attendance/qr",
-        headers=auth_headers,
-        json={"code": DEMO_VALID_QR_CODE},
-    )
-
-    assert response.status_code == 200
-    assert response.json()["method"] == "qr"
 
 
 def test_invalid_qr_is_rejected(client: TestClient, auth_headers: dict) -> None:

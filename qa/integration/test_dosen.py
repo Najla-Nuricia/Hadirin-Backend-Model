@@ -138,6 +138,30 @@ def test_dashboard_only_contains_own_schedules(
     assert JADWAL_DOSEN_LAIN not in {item["jadwal_id"] for item in body["jadwal"]}
 
 
+def test_dashboard_reports_today_and_open_session(
+    client: TestClient, dosen_headers: dict, open_session
+) -> None:
+    before = client.get("/dosen/dashboard", headers=dosen_headers).json()
+    sesi = open_session(JADWAL_TI3A)
+    after = client.get("/dosen/dashboard", headers=dosen_headers).json()
+
+    jadwal_before = {item["jadwal_id"]: item for item in before["jadwal"]}
+    jadwal_after = {item["jadwal_id"]: item for item in after["jadwal"]}
+    # Tanggal sentinel jatuh pada hari Senin, sama dengan hari jadwal ini.
+    assert after["tanggal"] == "2099-01-05"
+    assert after["hari"] == "senin"
+    assert jadwal_after[JADWAL_TI3A]["hari_ini"] is True
+    assert all(
+        item["hari_ini"] is False for item in after["jadwal"] if item["hari"] != "senin"
+    )
+    assert jadwal_before[JADWAL_TI3A]["sesi_aktif_id"] is None
+    assert jadwal_after[JADWAL_TI3A]["sesi_aktif_id"] == sesi["sesi_presensi_id"]
+    assert (
+        jadwal_after[JADWAL_TI3A]["jumlah_sesi"]
+        == jadwal_before[JADWAL_TI3A]["jumlah_sesi"] + 1
+    )
+
+
 def test_attendance_list_shows_status_per_student(
     client: TestClient, dosen_headers: dict
 ) -> None:
