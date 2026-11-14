@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import auth, dosen, health, mahasiswa, pengajuan, presensi, wajah
+from app.api.routes import auth, dosen, health, kelas, mahasiswa, pengajuan, presensi, wajah
 from app.core.config import get_settings
 from app.core.exceptions import AppException
 
@@ -35,8 +35,18 @@ def create_app() -> FastAPI:
         )
 
     # Register specific `/mahasiswa/*` routers before `/{nim}` in `mahasiswa.router`.
+    @application.get("/", tags=["Root"])
+    async def root_index() -> dict[str, str]:
+        return {
+            "name": "Hadirin Backend API",
+            "version": "2.0.0",
+            "status": "online",
+            "docs": "/docs",
+        }
+
     application.include_router(health.router)
     application.include_router(auth.router)
+    application.include_router(kelas.router)
     application.include_router(dosen.router)
     application.include_router(pengajuan.router)
     application.include_router(wajah.router)
