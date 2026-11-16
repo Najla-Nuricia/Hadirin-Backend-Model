@@ -141,7 +141,25 @@ class PresensiService:
 
         jadwals = self.jadwal_repo.list_by_kelas_nama(kelas_nama)
         jadwal_map = {str(j["id"]): j for j in jadwals if j.get("id")}
+
         open_sessions = self.kehadiran_repo.list_open_sesi_by_jadwal_ids(list(jadwal_map.keys()))
+
+        if self.settings.testing_bypass_session and not open_sessions and jadwals:
+            today_iso = common.now_wib().date().isoformat()
+            target_j = jadwals[0]
+            if target_j.get("id"):
+                existing = self.kehadiran_repo.get_sesi_by_jadwal_and_date(str(target_j["id"]), today_iso)
+                if existing:
+                    if not existing.get("is_open"):
+                        self.kehadiran_repo.client.table("sesi_presensi").update({"is_open": True}).eq("id", existing["id"]).execute()
+                else:
+                    self.kehadiran_repo.create_sesi_presensi({
+                        "jadwal_id": str(target_j["id"]),
+                        "tanggal": today_iso,
+                        "is_open": True,
+                        "qr_token": f"TEST_{uuid4().hex[:12]}",
+                    })
+                open_sessions = self.kehadiran_repo.list_open_sesi_by_jadwal_ids(list(jadwal_map.keys()))
 
         items: list[ActiveSessionItem] = []
         for sesi in open_sessions:
@@ -323,7 +341,7 @@ class PresensiService:
             distance = self._validate_gps_radius(latitude, longitude, accuracy=accuracy)
 
         sesi = self._resolve_target_session(student, sesi_presensi_id, qr_token)
-        jadwal = self._validate_open_session(sesi, student)
+        jadwal = self._validate_open_session(sesi, student, bypass_time_checks=self.settings.testing_bypass_session)
 
         result, _ = self.face_service.verify_for_attendance(nim=nim, image_bytes=image_bytes)
         if not result.matched:
@@ -432,6 +450,36 @@ class PresensiService:
             raise ForbiddenError("Akun Anda belum terdaftar di kelas.")
 
         jadwals = self.jadwal_repo.list_by_kelas_nama(kelas_nama)
+        if not jadwals:
+            raise NotFoundError("Tidak ada jadwal ditemukan untuk kelas Anda.")
+
+        # Testing mode: auto-pick or create a session for today using the first schedule
+        if self.settings.testing_bypass_session:
+            today_iso = common.now_wib().date().isoformat()
+            # Try to find any existing open session today (regardless of is_open flag)
+            all_sessions = self.kehadiran_repo.list_open_sesi_by_jadwal_ids(
+                jadwal_ids=[str(j["id"]) for j in jadwals if j.get("id")],
+            )
+            today_sessions = [s for s in all_sessions if str(s.get("tanggal", "")).startswith(today_iso)]
+            if today_sessions:
+                return today_sessions[0]
+            # Auto-create a testing session using the first schedule of the class
+            jadwal = jadwals[0]
+            existing = self.kehadiran_repo.get_sesi_by_jadwal_and_date(str(jadwal["id"]), today_iso)
+            if existing:
+                if not existing.get("is_open"):
+                    self.kehadiran_repo.client.table("sesi_presensi").update({"is_open": True}).eq("id", existing["id"]).execute()
+                    existing = {**existing, "is_open": True}
+                return existing
+            return self.kehadiran_repo.create_sesi_presensi(
+                {
+                    "jadwal_id": str(jadwal["id"]),
+                    "tanggal": today_iso,
+                    "is_open": True,
+                    "qr_token": f"TEST_{uuid4().hex[:12]}",
+                }
+            )
+
         open_sessions = self.kehadiran_repo.list_open_sesi_by_jadwal_ids(
             jadwal_ids=[str(j["id"]) for j in jadwals if j.get("id")],
             tanggal_iso=common.now_wib().date().isoformat(),
@@ -448,17 +496,19 @@ class PresensiService:
         self,
         sesi: dict[str, Any],
         student: dict[str, Any],
+        bypass_time_checks: bool = False,
     ) -> dict[str, Any] | None:
-        if not sesi.get("is_open"):
-            raise ForbiddenError("Sesi presensi sudah ditutup.")
+        if not bypass_time_checks:
+            if not sesi.get("is_open"):
+                raise ForbiddenError("Sesi presensi sudah ditutup.")
 
-        expires_raw = sesi.get("qr_expires_at")
-        if expires_raw:
-            parsed = datetime.fromisoformat(str(expires_raw).replace("Z", "+00:00"))
-            if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=common.WIB)
-            if common.now_wib() >= parsed:
-                raise ForbiddenError("QR Code sudah kedaluwarsa. Pindai QR terbaru.")
+            expires_raw = sesi.get("qr_expires_at")
+            if expires_raw:
+                parsed = datetime.fromisoformat(str(expires_raw).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=common.WIB)
+                if common.now_wib() >= parsed:
+                    raise ForbiddenError("QR Code sudah kedaluwarsa. Pindai QR terbaru.")
 
         student_kelas_id = student.get("kelas_id")
         student_kelas_nama = self._extract_student_kelas_nama(student)

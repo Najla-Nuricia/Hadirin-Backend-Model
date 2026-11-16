@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     storage_bucket_presensi: str = "foto-presensi"
     storage_bucket_pengajuan: str = "dokumen-pengajuan"
 
+    # Testing / Development
+    testing_bypass_session: bool = Field(default=False, description="Jika True, bypass is_open dan QR expiry untuk testing absensi.")
+
     # HTTP / CORS
     cors_allow_origins: str = "*"
 
