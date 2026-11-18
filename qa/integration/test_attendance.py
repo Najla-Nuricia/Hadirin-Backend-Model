@@ -93,6 +93,8 @@ def test_qr_attendance_valid_and_validations(
     qr_token = f"HADIRIN_TEST_{uuid4().hex[:10]}"
     expires_at = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
 
+    kehadiran_repo.client.table("sesi_presensi").delete().eq("jadwal_id", target_jadwal["id"]).eq("tanggal", unique_date).execute()
+
     sesi = kehadiran_repo.create_sesi_presensi(
         {
             "jadwal_id": target_jadwal["id"],
