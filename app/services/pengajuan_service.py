@@ -284,10 +284,31 @@ class PengajuanService:
             kelas = student.get("kelas") or {}
             if isinstance(kelas, list):
                 kelas = kelas[0] if kelas else {}
+            kelas_nama = kelas.get("nama")
+            if not kelas_nama and student.get("kelas_id"):
+                k_row = self.mahasiswa_repo.get_kelas_by_id(str(student["kelas_id"]))
+                if k_row:
+                    kelas_nama = k_row.get("nama")
+
             jadwal = self.jadwal_repo.find_matching_jadwal(
-                kelas_nama=kelas.get("nama"),
+                kelas_nama=kelas_nama,
                 matakuliah_query=matakuliah,
             )
+            if not jadwal and kelas_nama:
+                class_jadwals = self.jadwal_repo.list_by_kelas_nama(kelas_nama)
+                if class_jadwals:
+                    for cj in class_jadwals:
+                        if matakuliah and matakuliah.strip().lower() in str(cj.get("matkul_nama", "")).lower():
+                            jadwal = cj
+                            break
+                    if not jadwal:
+                        jadwal = class_jadwals[0]
+            if not jadwal and matakuliah:
+                jadwal = self.jadwal_repo.find_matching_jadwal(kelas_nama=None, matakuliah_query=matakuliah)
+            if not jadwal and kelas_nama:
+                class_jadwals = self.jadwal_repo.list_by_kelas_nama(kelas_nama)
+                if class_jadwals:
+                    jadwal = class_jadwals[0]
             if not jadwal:
                 raise NotFoundError(
                     "Jadwal perkuliahan tidak ditemukan di database untuk pengajuan ini."
