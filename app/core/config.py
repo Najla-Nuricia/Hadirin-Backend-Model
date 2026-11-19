@@ -35,11 +35,11 @@ class Settings(BaseSettings):
     # Campus GPS geofencing & QR session TTL
     geofence_name: str = "Area Kampus"
     campus_latitude: float = Field(
-        default=-7.946714,
+        default=-7.9440069,
         validation_alias=AliasChoices("CAMPUS_LATITUDE", "GEOFENCE_LATITUDE"),
     )
     campus_longitude: float = Field(
-        default=112.615668,
+        default=112.6145444,
         validation_alias=AliasChoices("CAMPUS_LONGITUDE", "GEOFENCE_LONGITUDE"),
     )
     max_gps_distance_meters: float = Field(
