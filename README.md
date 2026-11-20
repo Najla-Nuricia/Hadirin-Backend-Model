@@ -100,15 +100,27 @@ Setelah langkah 4, aktifkan hook di dashboard:
 > **Authentication → Hooks → Add Hook → Custom Access Token**
 > Schema: `public` | Function: `custom_access_token_hook`
 
+**Database yang sudah berjalan:** jalankan
+`app/db/migration_20261120000001_no_photos_pgvector.sql` (sama dengan
+`supabase/migrations/20261120000001_no_photos_pgvector.sql`, bisa lewat
+`supabase db push`). Migrasi ini mengaktifkan pgvector, mengubah
+`foto_wajah.embedding` dari JSONB ke `vector(512)` tanpa membuang embedding
+yang valid, membackup path foto lama ke `hadirin_legacy_photo_paths`, lalu
+menghapus kolom `storage_path` dan `face_photo_path`.
+
 Detail tabel, RLS, dan bucket storage: [`app/db/README.md`](app/db/README.md).
 
 ### Bucket Storage (buat manual, semua Private)
 
 | Bucket | Isi |
 |---|---|
-| `foto-wajah` | Foto registrasi wajah mahasiswa |
-| `foto-presensi` | Foto capture saat absensi |
 | `dokumen-pengajuan` | Surat izin / surat dokter |
+
+> Foto registrasi dan foto absensi **tidak lagi disimpan**. Foto hanya dipakai
+> sebagai bytes request untuk diekstrak menjadi embedding 512-d, lalu dibuang.
+> Bucket lama `foto-wajah` / `foto-presensi` sudah dikosongkan via
+> `python -m scripts.empty_legacy_photo_buckets --apply` (manifest path di
+> `/tmp/opencode/`). Bucket kosong bisa dihapus manual setelah migrasi terverifikasi.
 
 ### Seed akun Auth (opsional)
 
@@ -147,6 +159,12 @@ dihapus. Untuk memeriksa hasilnya lewat SQL Editor, jalankan
 ---
 
 ## 5. Model Face Recognition
+
+Registrasi dan verifikasi hanya menyimpan embedding `vector(512)` (pgvector).
+Foto mentah tidak di-upload ke Storage dan tidak disimpan di database. Strategi
+pencocokan bisa diatur lewat `FACE_MATCH_STRATEGY=average|multiple`. Kalibrasi
+FAR/FRR ditunda sampai dataset berlabel tersedia; untuk sementara default
+`average` dipertahankan.
 
 Bobot model harus ada di `ml/models/weights/`:
 
@@ -238,6 +256,7 @@ pytest -k presensi -v
 | Absensi GPS ditolak | Koordinat di luar geofence / akurasi > `GEOFENCE_MAX_ACCURACY_METERS` |
 | QR kedaluwarsa | Token berlaku `QR_TOKEN_TTL_SECONDS` (default 30 detik) |
 | Import `torch` lambat | Normal pada first load; model dimuat lazy |
+| Registrasi wajah error `malformed vector` | Migration pgvector belum dijalankan di Supabase |
 
 ---
 
@@ -253,6 +272,7 @@ app/
 └── services/        # business logic (presensi, wajah, dsb.)
 ml/                  # MTCNN alignment + MobileFaceNet embedding
 qa/integration/      # test integrasi live
-scripts/             # seed tooling
+qa/unit/             # test unit tanpa database
+scripts/             # seed tooling + skrip eksperimen wajah
 supabase/            # konfigurasi & migration Supabase CLI
 ```

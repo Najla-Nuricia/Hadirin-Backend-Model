@@ -1,4 +1,4 @@
-"""Attendance check-in (QR + GPS, Face Recognition + Storage) and history routes."""
+"""Attendance check-in (QR + GPS, Face Recognition) and history routes."""
 
 from typing import Any
 
@@ -79,11 +79,10 @@ async def record_face_attendance(
     if "application/json" in content_type:
         raw = await parse_json_body(request)
         payload = FaceAttendanceRequest.model_validate(raw)
-        img_bytes, _, img_mime = FaceService.decode_base64_sample(payload.image_base64)
+        img_bytes, _, _ = FaceService.decode_base64_sample(payload.image_base64)
         return presensi_service.submit_face_attendance(
             nim=nim,
             image_bytes=img_bytes,
-            content_type=img_mime,
             sesi_presensi_id=payload.sesi_presensi_id,
             qr_token=payload.qr_token,
             latitude=payload.latitude,
@@ -106,7 +105,6 @@ async def record_face_attendance(
     return presensi_service.submit_face_attendance(
         nim=nim,
         image_bytes=img_bytes,
-        content_type=chosen.content_type or "image/jpeg",
         sesi_presensi_id=str(form.get("sesi_presensi_id")) if form.get("sesi_presensi_id") else None,
         qr_token=str(form.get("qr_token")) if form.get("qr_token") else None,
         latitude=latitude,

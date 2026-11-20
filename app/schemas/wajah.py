@@ -1,6 +1,6 @@
 """Pydantic schemas for student face registration, update, status, and verification."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class FaceStatusResponse(BaseModel):
@@ -11,8 +11,6 @@ class FaceStatusResponse(BaseModel):
     active_samples: int
     embedding_dimension: int | None = None
     threshold: float
-    storage_paths: list[str] = Field(default_factory=list)
-    sample_urls: list[str] = Field(default_factory=list)
     last_updated_at: str | None = None
 
 
@@ -24,14 +22,13 @@ class FaceBase64Payload(BaseModel):
 
 
 class FaceRegistrationResponse(BaseModel):
-    """Result after registering or updating face embeddings and images."""
+    """Result after registering or updating face embeddings."""
 
     message: str
     nim: str
     samples_saved: int
     embedding_dimension: int
     threshold: float
-    storage_paths: list[str]
     is_registered: bool = True
 
 
@@ -45,4 +42,5 @@ class FaceVerifyResponse(BaseModel):
     similarity: float
     threshold: float
     active_samples: int
+    strategy: str = "average"
 

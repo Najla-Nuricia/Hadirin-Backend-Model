@@ -3,7 +3,9 @@
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Sequence
+from typing import Literal, Sequence
+
+FaceMatchStrategy = Literal["average", "multiple"]
 
 import numpy as np
 import torch
@@ -35,6 +37,7 @@ class FaceVerificationResult:
     label: str
     similarity: float
     threshold: float
+    strategy: FaceMatchStrategy = "average"
 
 
 class FaceRecognitionEngine:
@@ -125,16 +128,35 @@ class FaceRecognitionEngine:
         t_b = torch.tensor(embedding_b, dtype=torch.float32).unsqueeze(0)
         return float(F.cosine_similarity(t_a, t_b).item())
 
+    @staticmethod
+    def compare_embeddings(
+        probe_embedding: Sequence[float],
+        reference_embeddings: Sequence[Sequence[float]],
+        strategy: FaceMatchStrategy = "average",
+    ) -> float:
+        """Score a probe against references using one centroid or raw max-cosine."""
+        if not reference_embeddings:
+            raise ValueError("Daftar embedding referensi tidak boleh kosong.")
+        if strategy == "multiple":
+            return max(
+                FaceRecognitionEngine.cosine_similarity(probe_embedding, ref)
+                for ref in reference_embeddings
+            )
+        if strategy != "average":
+            raise ValueError(f"Strategi pencocokan tidak dikenali: {strategy}")
+        centroid = FaceRecognitionEngine.compute_average_embedding(reference_embeddings)
+        return FaceRecognitionEngine.cosine_similarity(centroid, probe_embedding)
+
     def verify_from_bytes(
         self,
         image_bytes: bytes,
         reference_embeddings: Sequence[Sequence[float]],
         threshold: float = 0.5,
+        strategy: FaceMatchStrategy = "average",
     ) -> FaceVerificationResult:
-        """Extract embedding from probe image and compare against student's centroid."""
+        """Extract embedding from probe image and compare against student's references."""
         probe_embedding = self.extract_embedding_from_bytes(image_bytes)
-        centroid = self.compute_average_embedding(reference_embeddings)
-        similarity = self.cosine_similarity(centroid, probe_embedding)
+        similarity = self.compare_embeddings(probe_embedding, reference_embeddings, strategy)
         matched = similarity >= threshold
         return FaceVerificationResult(
             matched=matched,
@@ -142,6 +164,7 @@ class FaceRecognitionEngine:
             label="WAJAH COCOK" if matched else "WAJAH TIDAK COCOK",
             similarity=round(similarity, 4),
             threshold=threshold,
+            strategy=strategy,
         )
 
 

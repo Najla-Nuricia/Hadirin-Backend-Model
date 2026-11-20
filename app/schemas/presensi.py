@@ -37,8 +37,6 @@ class PresensiHistoryItem(BaseModel):
     catatan: str | None = None
     status_pengajuan: str | None = None
     jenis_pengajuan: str | None = None
-    face_photo_path: str | None = None
-    face_photo_url: str | None = None
 
 
 class PresensiHistoryResponse(BaseModel):
@@ -132,6 +130,4 @@ class AttendanceRecordResponse(BaseModel):
     radius_meters: float | None = None
     similarity: float | None = None
     threshold: float | None = None
-    face_photo_path: str | None = None
-    face_photo_url: str | None = None
 
