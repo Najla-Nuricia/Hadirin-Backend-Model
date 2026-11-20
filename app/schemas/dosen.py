@@ -128,6 +128,32 @@ class DosenKehadiranListResponse(BaseModel):
     students: list[DosenStudentAttendanceItem]
 
 
+class DosenMatkulItem(BaseModel):
+    """A course option derived from the lecturer's own schedule for a class and day."""
+
+    jadwal_id: str
+    kode: str
+    nama: str
+    course_code: str
+    course_name: str
+    sks: int | None = None
+    jam_mulai: str = ""
+    jam_selesai: str = ""
+    ruangan_kode: str | None = None
+    ruangan_nama: str | None = None
+
+
+class DosenMatkulListResponse(BaseModel):
+    """Course options filtered by selected class and date (mapped to a weekday)."""
+
+    kelas_id: str
+    kelas_nama: str | None = None
+    tanggal: str
+    hari: str
+    data: list[DosenMatkulItem]
+    total: int
+
+
 class SesiPresensiQrResponse(BaseModel):
     """Dynamic QR session state returned when opening, refreshing, or closing a session."""
 

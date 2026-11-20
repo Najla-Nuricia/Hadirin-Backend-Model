@@ -1,6 +1,6 @@
 """Lecturer service: authentication, dashboard analytics, session roster, and QR control."""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import secrets
 from typing import Any
 
@@ -22,6 +22,8 @@ from app.schemas.dosen import (
     DosenKelasSummaryItem,
     DosenLoginRequest,
     DosenLoginResponse,
+    DosenMatkulItem,
+    DosenMatkulListResponse,
     DosenProfileResponse,
     DosenStudentAttendanceItem,
     DosenStudentDocument,
@@ -149,6 +151,58 @@ class DosenService:
             access_token=token,
             token_type="bearer",
             **profile.model_dump(),
+        )
+
+    def list_matkul_options(
+        self,
+        nip: str,
+        kelas_id: str,
+        tanggal_iso: str,
+    ) -> DosenMatkulListResponse:
+        """Return only courses this lecturer teaches for `kelas_id` on `tanggal`.
+
+        The date is mapped to a weekday (`hari`) because schedules are recurring.
+        """
+        tanggal = date.fromisoformat(tanggal_iso)
+        hari = common.WEEKDAY_TO_HARI[tanggal.weekday()]
+        rows = self.dosen_repo.list_matkul_options(nip, kelas_id, hari)
+
+        items: list[DosenMatkulItem] = []
+        seen: set[tuple[str, str, str]] = set()
+        kelas_nama: str | None = None
+        for row in rows:
+            matkul = row.get("mata_kuliah") or {}
+            ruangan = row.get("ruangan") or {}
+            kode = str(matkul.get("kode") or "").strip()
+            nama = str(matkul.get("nama") or "").strip()
+            key = (kode, nama, str(row.get("id")))
+            if not kode or not nama or key in seen:
+                continue
+            seen.add(key)
+            if kelas_nama is None:
+                kelas_nama = (row.get("kelas") or {}).get("nama")
+            items.append(
+                DosenMatkulItem(
+                    jadwal_id=str(row["id"]),
+                    kode=kode,
+                    nama=nama,
+                    course_code=kode,
+                    course_name=nama,
+                    sks=matkul.get("sks"),
+                    jam_mulai=common.format_hhmm(row.get("jam_mulai")),
+                    jam_selesai=common.format_hhmm(row.get("jam_selesai")),
+                    ruangan_kode=ruangan.get("kode"),
+                    ruangan_nama=ruangan.get("nama"),
+                )
+            )
+
+        return DosenMatkulListResponse(
+            kelas_id=kelas_id,
+            kelas_nama=kelas_nama,
+            tanggal=tanggal.isoformat(),
+            hari=hari,
+            data=items,
+            total=len(items),
         )
 
     def get_dashboard(self, current_dosen: dict[str, Any]) -> DosenDashboardResponse:
