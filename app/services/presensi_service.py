@@ -78,19 +78,13 @@ class PresensiService:
         status_filter: str | None = None,
         limit: int | None = None,
     ) -> PresensiHistoryResponse:
-        """Fetch attendance history from `v_rekap_kehadiran` enriched with photo paths."""
+        """Fetch attendance history from `v_rekap_kehadiran`."""
         self._get_student_or_404(nim)
         rows = self.kehadiran_repo.list_rekap_by_nim(
             nim=nim,
             status_filter=status_filter,
             limit=limit,
         )
-        raw_rows = self.kehadiran_repo.list_kehadiran_by_nim(nim)
-        photo_map = {
-            str(r["id"]): r.get("face_photo_path")
-            for r in raw_rows
-            if r.get("id")
-        }
 
         items: list[PresensiHistoryItem] = []
         for row in rows:
@@ -99,7 +93,6 @@ class PresensiService:
             kehadiran_id = str(row["kehadiran_id"])
             tanggal = str(row.get("tanggal") or "")
             matkul = str(row.get("matkul_nama") or "-")
-            face_path = photo_map.get(kehadiran_id)
             items.append(
                 PresensiHistoryItem(
                     kehadiran_id=kehadiran_id,
@@ -120,15 +113,6 @@ class PresensiService:
                     catatan=row.get("catatan"),
                     status_pengajuan=row.get("status_pengajuan"),
                     jenis_pengajuan=row.get("jenis_pengajuan"),
-                    face_photo_path=face_path,
-                    face_photo_url=(
-                        self.kehadiran_repo.create_signed_url(
-                            self.settings.storage_bucket_presensi,
-                            face_path,
-                        )
-                        if face_path
-                        else None
-                    ),
                 )
             )
         return PresensiHistoryResponse(data=items, total=len(items))
@@ -326,7 +310,6 @@ class PresensiService:
         self,
         nim: str,
         image_bytes: bytes,
-        content_type: str = "image/jpeg",
         sesi_presensi_id: str | None = None,
         qr_token: str | None = None,
         latitude: float | None = None,
@@ -334,7 +317,7 @@ class PresensiService:
         accuracy: float | None = None,
         catatan: str | None = None,
     ) -> AttendanceRecordResponse:
-        """Verify student's face with ML engine, validate open session/GPS, and record `kehadiran`."""
+        """Verify face with ML engine, validate session/GPS, and record `kehadiran` without storing the photo."""
         student = self._get_student_or_404(nim)
         distance: float | None = None
         if latitude is not None and longitude is not None:
@@ -351,37 +334,20 @@ class PresensiService:
                     f"(kemiripan={result.similarity:.4f}, batas minimum={result.threshold:.2f})."
                 )
 
-        ext, mime = self.face_service.normalize_uploaded_metadata("probe.jpg", content_type, 1)
-        storage_path = f"{nim}/{sesi['id']}_{uuid4().hex[:10]}.{ext}"
-        self.kehadiran_repo.upload_attendance_photo(
-            storage_path=storage_path,
-            content=image_bytes,
-            content_type=mime,
-        )
-
         now = common.now_wib()
         jam_masuk = now.strftime("%H:%M:%S")
         note = catatan or f"Presensi wajah terverifikasi (similarity={result.similarity:.4f})"
-        try:
-            saved = self.kehadiran_repo.upsert_kehadiran(
-                sesi_presensi_id=str(sesi["id"]),
-                nim=nim,
-                fields={
-                    "status": "hadir",
-                    "jam_masuk": jam_masuk,
-                    "catatan": note,
-                    "face_photo_path": storage_path,
-                },
-            )
-        except Exception:
-            self.kehadiran_repo.delete_attendance_photo(storage_path)
-            raise
+        saved = self.kehadiran_repo.upsert_kehadiran(
+            sesi_presensi_id=str(sesi["id"]),
+            nim=nim,
+            fields={
+                "status": "hadir",
+                "jam_masuk": jam_masuk,
+                "catatan": note,
+            },
+        )
 
         course_name = jadwal.get("matkul_nama") if jadwal else None
-        signed_photo_url = self.kehadiran_repo.create_signed_url(
-            self.settings.storage_bucket_presensi,
-            storage_path,
-        )
         return AttendanceRecordResponse(
             method="face",
             nim=nim,
@@ -400,8 +366,6 @@ class PresensiService:
             distance_meters=distance,
             similarity=result.similarity,
             threshold=result.threshold,
-            face_photo_path=storage_path,
-            face_photo_url=signed_photo_url,
         )
 
     def _validate_gps_radius(

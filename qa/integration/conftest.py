@@ -11,7 +11,6 @@ from app.core.config import Settings, get_settings
 from app.db.repositories import (
     AuthRepository,
     FotoWajahRepository,
-    KehadiranRepository,
     MahasiswaRepository,
 )
 from app.db.session import get_supabase_client
@@ -38,15 +37,12 @@ def _cleanup_student_by_nim(settings: Settings, nim: str) -> None:
     mhs_repo = MahasiswaRepository(client=supabase, settings=settings)
     auth_repo = AuthRepository(client=supabase, settings=settings)
     foto_repo = FotoWajahRepository(client=supabase, settings=settings)
-    kehadiran_repo = KehadiranRepository(client=supabase, settings=settings)
 
     row = mhs_repo.get_by_nim(nim)
     if not row:
         return
     foto_repo.delete_by_nim(nim)
-    for k in kehadiran_repo.list_kehadiran_by_nim(nim):
-        kehadiran_repo.delete_attendance_photo(k.get("face_photo_path"))
-        kehadiran_repo.delete_kehadiran_by_id(str(k["id"]))
+    supabase.table("kehadiran").delete().eq("nim", nim).execute()
     mhs_repo.delete_by_nim(nim)
     if row.get("auth_user_id"):
         try:

@@ -256,7 +256,7 @@ class PengajuanService:
         ):
             raw_list = self.kehadiran_repo.list_kehadiran_by_nim(nim)
             target = next((r for r in raw_list if str(r.get("id")) == str(kehadiran_id)), None)
-            if target and not target.get("jam_masuk") and not target.get("face_photo_path") and not target.get("catatan"):
+            if target and not target.get("jam_masuk") and not target.get("catatan"):
                 self.kehadiran_repo.delete_kehadiran_by_id(str(kehadiran_id))
 
         return MessageResponse(message="Pengajuan berhasil dihapus.")

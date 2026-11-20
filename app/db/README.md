@@ -9,7 +9,9 @@ app/db/
 ├── schema.sql    ← Buat semua tabel, enum, trigger, view
 ├── seed.sql      ← Data awal (program studi, dosen, kelas, mahasiswa demo)
 ├── rls.sql       ← Row Level Security per peran (admin / dosen / mahasiswa)
-└── auth_hook.sql ← Custom JWT claims + fungsi link akun Auth ke tabel
+├── auth_hook.sql ← Custom JWT claims + fungsi link akun Auth ke tabel
+└── migration_20261120000001_no_photos_pgvector.sql
+                  ← DB lama: JSONB → vector(512), hapus path foto
 ```
 
 ---
@@ -153,6 +155,10 @@ Set custom claims melalui **Supabase Auth Hook** atau function PostgreSQL saat u
 
 | Bucket              | Isi                                      | Akses        |
 |---------------------|------------------------------------------|--------------|
-| `foto-wajah`        | Foto registrasi wajah mahasiswa          | Private      |
-| `foto-presensi`     | Foto saat mahasiswa absen (ML capture)   | Private      |
 | `dokumen-pengajuan` | Surat izin / surat dokter                | Private      |
+
+Foto wajah dan foto presensi tidak lagi disimpan. `foto_wajah.embedding`
+menggunakan tipe `vector(512)` dari ekstensi pgvector; `storage_path` dan
+`face_photo_path` sudah dihapus. Untuk database lama, jalankan
+`app/db/migration_20261120000001_no_photos_pgvector.sql` — migrasinya
+membuat backup path ke `hadirin_legacy_photo_paths` sebelum menghapus kolom.

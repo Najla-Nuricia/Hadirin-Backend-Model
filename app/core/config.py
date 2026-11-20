@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -52,14 +53,15 @@ class Settings(BaseSettings):
 
     # Face recognition (MTCNN + MobileFaceNet)
     face_similarity_threshold: float = Field(default=0.5, ge=-1.0, le=1.0)
+    # "average" = centroid semua embedding; "multiple" = max cosine per embedding.
+    # Default tidak diubah sampai eksperimen FAR/FRR memberikan bukti.
+    face_match_strategy: Literal["average", "multiple"] = "average"
     mtcnn_min_face_size: int = Field(default=20, ge=8)
     face_min_samples_recommended: int = Field(default=3, ge=1)
     face_max_samples_per_request: int = Field(default=10, ge=1, le=20)
     ml_weights_dir: Path = BASE_DIR / "ml" / "models" / "weights"
 
-    # Supabase Storage buckets
-    storage_bucket_wajah: str = "foto-wajah"
-    storage_bucket_presensi: str = "foto-presensi"
+    # Supabase Storage buckets (hanya dokumen pengajuan yang masih dipakai)
     storage_bucket_pengajuan: str = "dokumen-pengajuan"
 
     # Testing / Development

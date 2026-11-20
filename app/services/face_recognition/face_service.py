@@ -2,8 +2,6 @@
 
 import base64
 from pathlib import Path
-from typing import Any
-from uuid import uuid4
 
 from app.core.config import Settings, get_settings
 from app.core.exceptions import (
@@ -72,12 +70,6 @@ class FaceService:
         """Return active face registration metadata and signed sample URLs for a student."""
         self._ensure_student_exists(nim)
         rows = self.foto_wajah_repo.list_by_nim(nim, active_only=True)
-        paths = [str(row["storage_path"]) for row in rows if row.get("storage_path")]
-        urls = [
-            url
-            for path in paths
-            if (url := self.foto_wajah_repo.get_face_signed_url(path))
-        ]
         first_emb = rows[0].get("embedding") if rows else None
         emb_dim = len(first_emb) if isinstance(first_emb, list) else None
         last_updated = max(
@@ -90,8 +82,6 @@ class FaceService:
             active_samples=len(rows),
             embedding_dimension=emb_dim,
             threshold=self.settings.face_similarity_threshold,
-            storage_paths=paths,
-            sample_urls=urls,
             last_updated_at=last_updated,
         )
 
@@ -137,7 +127,7 @@ class FaceService:
         )
 
     def verify_face_bytes(self, nim: str, image_bytes: bytes) -> FaceVerifyResponse:
-        """Verify a probe image against the student's averaged registered embeddings."""
+        """Verify a probe image against the student's registered embeddings."""
         result, sample_count = self._compare_probe(nim, image_bytes)
         return FaceVerifyResponse(
             matched=result.matched,
@@ -147,6 +137,7 @@ class FaceService:
             similarity=result.similarity,
             threshold=result.threshold,
             active_samples=sample_count,
+            strategy=result.strategy,
         )
 
     def verify_for_attendance(
@@ -213,38 +204,17 @@ class FaceService:
         validated = self._validate_samples(samples)
         embeddings = self._extract_embeddings(validated)
 
-        # Ensure averaged centroid embedding computes cleanly (even across diverse lighting/poses).
+        # Centroid hanya dipakai untuk melaporkan dimensi; skor verifikasi
+        # dihitung dari embedding aktif sesuai strategi yang dikonfigurasi.
         avg_embedding = self.engine.compute_average_embedding(embeddings)
 
-        batch_id = uuid4().hex[:12]
-        uploaded_paths: list[str] = []
-        rows_to_insert: list[dict[str, Any]] = []
-
-        try:
-            for idx, (content, ext, content_type) in enumerate(validated, start=1):
-                storage_path = f"{nim}/{batch_id}_{idx}.{ext}"
-                self.foto_wajah_repo.upload_face_image(
-                    storage_path=storage_path,
-                    content=content,
-                    content_type=content_type,
-                )
-                uploaded_paths.append(storage_path)
-                rows_to_insert.append(
-                    {
-                        "nim": nim,
-                        "storage_path": storage_path,
-                        "embedding": embeddings[idx - 1],
-                        "is_active": True,
-                    }
-                )
-
-            if deactivate_existing:
-                self.foto_wajah_repo.deactivate_by_nim(nim)
-
-            self.foto_wajah_repo.create_many(rows_to_insert)
-        except Exception:
-            self.foto_wajah_repo.delete_face_images(uploaded_paths)
-            raise
+        rows_to_insert = [
+            {"nim": nim, "embedding": embedding, "is_active": True}
+            for embedding in embeddings
+        ]
+        if deactivate_existing:
+            self.foto_wajah_repo.deactivate_by_nim(nim)
+        self.foto_wajah_repo.create_many(rows_to_insert)
 
         return FaceRegistrationResponse(
             message=message,
@@ -252,7 +222,6 @@ class FaceService:
             samples_saved=len(rows_to_insert),
             embedding_dimension=len(avg_embedding),
             threshold=self.settings.face_similarity_threshold,
-            storage_paths=uploaded_paths,
             is_registered=True,
         )
 
@@ -313,6 +282,7 @@ class FaceService:
                 image_bytes=image_bytes,
                 reference_embeddings=reference_embeddings,
                 threshold=self.settings.face_similarity_threshold,
+                strategy=self.settings.face_match_strategy,
             )
         except FaceDetectionError as exc:
             raise UnprocessableError(str(exc)) from exc

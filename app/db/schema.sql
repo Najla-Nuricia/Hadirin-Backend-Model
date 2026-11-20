@@ -9,6 +9,8 @@
 -- ─────────────────────────────────────────────────────────────
 -- uuid-ossp tidak diperlukan, Supabase sudah punya gen_random_uuid() bawaan
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+-- pgvector menyimpan embedding wajah 512-d MobileFaceNet secara native.
+CREATE EXTENSION IF NOT EXISTS "vector";
 
 -- ─────────────────────────────────────────────────────────────
 -- ENUM TYPES
@@ -127,13 +129,12 @@ CREATE TABLE mahasiswa (
 );
 
 -- ─────────────────────────────────────────────────────────────
--- 9. FOTO WAJAH MAHASISWA (untuk face recognition)
+-- 9. FOTO WAJAH MAHASISWA (embedding saja; foto mentah tidak disimpan)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE foto_wajah (
     id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     nim           VARCHAR(20)  NOT NULL REFERENCES mahasiswa(nim) ON DELETE CASCADE,
-    storage_path  TEXT         NOT NULL,
-    embedding     JSONB,
+    embedding     vector(512),
     is_active     BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
@@ -193,7 +194,6 @@ CREATE TABLE kehadiran (
     status           status_kehadiran NOT NULL DEFAULT 'alfa',
     jam_masuk        TIME,
     catatan          TEXT,
-    face_photo_path  TEXT,
     created_at       TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
     UNIQUE (sesi_presensi_id, nim)

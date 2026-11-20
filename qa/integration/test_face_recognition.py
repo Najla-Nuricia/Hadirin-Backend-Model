@@ -58,7 +58,6 @@ def test_face_registration_update_verify_and_attendance(
     reg_data = reg_resp.json()
     assert reg_data["samples_saved"] == 1
     assert reg_data["embedding_dimension"] == 512
-    assert len(reg_data["storage_paths"]) == 1
 
     # 4. Duplicate registration blocked with 409 Conflict (must use PUT /update).
     dup_resp = client.post(
@@ -114,7 +113,7 @@ def test_face_registration_update_verify_and_attendance(
         )
         assert bad_att.status_code == 403
 
-        # Matching person succeeds and writes `kehadiran` + uploads `face_photo_path`.
+        # Matching person succeeds and writes `kehadiran` without storing the probe photo.
         ok_att = client.post(
             "/attendance/face",
             data={
@@ -129,11 +128,10 @@ def test_face_registration_update_verify_and_attendance(
         att_data = ok_att.json()
         assert att_data["status"] == "hadir"
         assert att_data["similarity"] >= settings.face_similarity_threshold
-        assert att_data["face_photo_path"] is not None
+        assert att_data["kehadiran_id"] is not None
     finally:
         existing_k = kehadiran_repo.get_kehadiran_by_sesi_and_nim(sesi_id, nim)
         if existing_k:
-            kehadiran_repo.delete_attendance_photo(existing_k.get("face_photo_path"))
             kehadiran_repo.delete_kehadiran_by_id(str(existing_k["id"]))
         kehadiran_repo.delete_sesi_presensi(sesi_id)
 

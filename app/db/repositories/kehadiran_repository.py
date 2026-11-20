@@ -1,4 +1,4 @@
-"""Repository for `sesi_presensi`, `kehadiran`, `v_rekap_kehadiran`, and attendance photos."""
+"""Repository for `sesi_presensi`, `kehadiran`, and `v_rekap_kehadiran`."""
 
 from typing import Any
 
@@ -7,7 +7,7 @@ from app.db.repositories.base import BaseRepository
 
 
 class KehadiranRepository(BaseRepository):
-    """Database and Storage operations for attendance sessions and student records."""
+    """Database operations for attendance sessions and student records."""
 
     def list_rekap_by_nim(
         self,
@@ -37,7 +37,7 @@ class KehadiranRepository(BaseRepository):
         return self.first_or_none(res.data)
 
     def list_kehadiran_by_nim(self, nim: str) -> list[dict[str, Any]]:
-        """Fetch raw `kehadiran` rows for a student including `face_photo_path`."""
+        """Fetch raw `kehadiran` rows for a student."""
         res = (
             self.client.table("kehadiran")
             .select("*")
@@ -167,23 +167,4 @@ class KehadiranRepository(BaseRepository):
         """Delete an attendance row by UUID."""
         res = self.client.table("kehadiran").delete().eq("id", kehadiran_id).execute()
         return bool(res.data)
-
-    def upload_attendance_photo(
-        self,
-        storage_path: str,
-        content: bytes,
-        content_type: str = "image/jpeg",
-    ) -> str:
-        """Upload face verification snapshot to the attendance bucket."""
-        return self.upload_to_bucket(
-            bucket=self.settings.storage_bucket_presensi,
-            storage_path=storage_path,
-            content=content,
-            content_type=content_type,
-        )
-
-    def delete_attendance_photo(self, storage_path: str | None) -> None:
-        """Delete an attendance snapshot from Storage if present."""
-        if storage_path:
-            self.delete_from_bucket(self.settings.storage_bucket_presensi, [storage_path])
 
