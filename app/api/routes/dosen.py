@@ -12,6 +12,7 @@ from app.schemas.dosen import (
     DosenKehadiranListResponse,
     DosenLoginRequest,
     DosenLoginResponse,
+    DosenMatkulListResponse,
     SesiPresensiQrResponse,
 )
 from app.services.dosen_service import DosenService
@@ -35,6 +36,24 @@ def get_dosen_dashboard(
 ) -> DosenDashboardResponse:
     """Return active classes, schedules, and attendance counts for the signed-in lecturer."""
     return dosen_service.get_dashboard(current_dosen)
+
+
+@router.get("/dosen/matkul", response_model=DosenMatkulListResponse)
+def list_dosen_matkul(
+    kelas_id: UUID = Query(..., description="ID kelas yang dipilih dosen."),
+    tanggal: date = Query(
+        ...,
+        description="Tanggal pilihan (YYYY-MM-DD). Dikonversi ke hari jadwal (Senin-Jumat).",
+    ),
+    current_dosen: dict[str, Any] = Depends(get_current_dosen),
+    dosen_service: DosenService = Depends(get_dosen_service),
+) -> DosenMatkulListResponse:
+    """Return matkul options limited to this lecturer's schedule for the class and date."""
+    return dosen_service.list_matkul_options(
+        nip=str(current_dosen["nip"]),
+        kelas_id=str(kelas_id),
+        tanggal_iso=tanggal.isoformat(),
+    )
 
 
 @router.get("/dosen/jadwal/{jadwal_id}/kehadiran", response_model=DosenKehadiranListResponse)

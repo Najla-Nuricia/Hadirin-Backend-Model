@@ -56,6 +56,29 @@ class DosenRepository(BaseRepository):
         rows = res.data or []
         return self._attach_slot_times(rows)
 
+    def list_matkul_options(
+        self,
+        dosen_nip: str,
+        kelas_id: str,
+        hari: str,
+    ) -> list[dict[str, Any]]:
+        """List this lecturer's courses for one class and weekday (active term only)."""
+        res = (
+            self.client.table("jadwal_kuliah")
+            .select(
+                "id, hari, sesi_mulai, sesi_selesai, "
+                "mata_kuliah(kode, nama, sks), kelas(nama), "
+                "ruangan(kode, nama), tahun_ajaran!inner(status)"
+            )
+            .eq("dosen_nip", dosen_nip)
+            .eq("kelas_id", kelas_id)
+            .eq("hari", hari)
+            .eq("tahun_ajaran.status", "aktif")
+            .order("sesi_mulai")
+            .execute()
+        )
+        return self._attach_slot_times(res.data or [])
+
     def get_jadwal_by_id(self, jadwal_id: str) -> dict[str, Any] | None:
         """Fetch a single `jadwal_kuliah` row joined with class/course/time metadata."""
         res = (

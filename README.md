@@ -190,7 +190,7 @@ curl http://127.0.0.1:8000/health
 | Grup | Base path | Contoh |
 |---|---|---|
 | Auth | `/auth` | `POST /auth/login`, `GET /auth/check-nim/{nim}` |
-| Dosen | `/auth/dosen/login`, `/dosen` | `GET /dosen/dashboard`, `POST /dosen/sesi-presensi/{id}/qr` |
+| Dosen | `/auth/dosen/login`, `/dosen` | `GET /dosen/dashboard`, `GET /dosen/matkul?kelas_id=...&tanggal=YYYY-MM-DD`, `POST /dosen/sesi-presensi/{id}/qr` |
 | Mahasiswa | `/mahasiswa` | `GET /mahasiswa/me`, `GET /mahasiswa/jadwal` |
 | Wajah | `/mahasiswa/wajah` | `POST /mahasiswa/wajah`, `POST /mahasiswa/wajah/verify` |
 | Pengajuan | `/mahasiswa/pengajuan` | `POST /mahasiswa/pengajuan` |
@@ -198,6 +198,18 @@ curl http://127.0.0.1:8000/health
 | Health | `/health` | probe DB + bobot ML |
 
 Autentikasi memakai header `Authorization: Bearer <token>`.
+
+### Mata kuliah di sisi dosen (bergantung kelas + tanggal)
+
+`GET /dosen/matkul?kelas_id=<uuid>&tanggal=YYYY-MM-DD` hanya mengembalikan mata kuliah
+dari **jadwal dosen yang sedang login**, untuk kelas yang dipilih, pada hari hasil
+konversi `tanggal` (Senin–Jumat). Tidak mengambil seluruh `mata_kuliah` di database.
+Contoh:
+
+```bash
+curl -H "Authorization: Bearer <token-dosen>" \
+  "http://127.0.0.1:8000/dosen/matkul?kelas_id=22222222-0000-0000-0000-000000000005&tanggal=2026-11-23"
+```
 
 ---
 
