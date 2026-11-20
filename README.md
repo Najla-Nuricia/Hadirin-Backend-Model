@@ -120,6 +120,30 @@ python -m scripts.seed_auth_and_demo
 python -m scripts.seed_auth_and_demo --reset-passwords
 ```
 
+### Seed akun Dosen Testing + jadwal (idempotent)
+
+Membuat satu dosen dummy (`Dosen Testing`, `dosentesting@hadirin.test` / `dosen123`)
+di Supabase Auth **dan** tabel `dosen`, lalu menambahkan jadwal Senin-Jumat untuk
+**seluruh kelas & ruangan** yang sudah ada. Aman dijalankan berulang kali.
+
+```bash
+python -m scripts.seed_dosen_testing --dry-run  # lihat rencana, tanpa menulis
+python -m scripts.seed_dosen_testing            # terapkan seed
+```
+
+Kredensial dosen dummy:
+
+| Field | Nilai |
+|---|---|
+| NIP | `999999999001` |
+| Nama | `Dosen Testing` |
+| Email | `dosentesting@hadirin.test` |
+| Password | `dosen123` |
+
+Seed hanya menambahkan baris baru (UUID deterministik). Baris lama tidak diubah atau
+dihapus. Untuk memeriksa hasilnya lewat SQL Editor, jalankan
+`supabase/verify_seed_dosen_testing.sql` (read-only).
+
 ---
 
 ## 5. Model Face Recognition
