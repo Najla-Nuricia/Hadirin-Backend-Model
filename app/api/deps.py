@@ -30,6 +30,7 @@ from app.services import (
     PresensiService,
 )
 from app.services.admin_auth_service import AdminAuthService
+from app.services.admin_jadwal_service import AdminJadwalService
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -151,6 +152,19 @@ def get_jadwal_service(
         mahasiswa_repo=mahasiswa_repo,
         jadwal_repo=jadwal_repo,
         kehadiran_repo=kehadiran_repo,
+    )
+
+
+def get_admin_jadwal_service(
+    jadwal_repo: JadwalRepository = Depends(get_jadwal_repository),
+    mahasiswa_repo: MahasiswaRepository = Depends(get_mahasiswa_repository),
+    dosen_repo: DosenRepository = Depends(get_dosen_repository),
+) -> AdminJadwalService:
+    """Provide the admin schedule service with read/write repositories."""
+    return AdminJadwalService(
+        jadwal_repo=jadwal_repo,
+        mahasiswa_repo=mahasiswa_repo,
+        dosen_repo=dosen_repo,
     )
 
 
