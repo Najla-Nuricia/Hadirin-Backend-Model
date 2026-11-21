@@ -77,10 +77,26 @@ Lalu isi nilai wajib berikut:
 | `SUPABASE_URL` | URL project Supabase, mis. `https://xxxx.supabase.co` |
 | `SUPABASE_SERVICE_KEY` | **Service role key** (bukan anon key) |
 | `JWT_SECRET_KEY` | String acak panjang untuk menandatangani token |
-| `DOSEN_DEFAULT_PASSWORD` | Password login dosen (opsional, kosong = login dosen 503) |
 
 Variabel lain (GPS geofence, TTL QR, threshold wajah, nama bucket storage, CORS) sudah punya
 default yang wajar — lihat `.env.example` untuk daftar lengkap.
+
+### Autentikasi (ketiga role)
+Mahasiswa, dosen, dan admin **semuanya diverifikasi lewat Supabase Auth**. Backend hanya
+menerbitkan JWT HS256 setelah kredensial terverifikasi dan akun Auth terhubung ke tabel
+`mahasiswa` / `dosen` / `admin` (kolom `auth_user_id`).
+
+Siapkan akun Auth admin & dosen (idempotent):
+
+```bash
+python -m scripts.seed_auth_all_roles --dry-run   # lihat rencana
+python -m scripts.seed_auth_all_roles              # buat & tautkan akun
+python -m scripts.seed_auth_all_roles --reset-passwords  # reset ke password awal dari .env
+```
+
+Admin: identifier `ADMIN_USERNAME` (default `adminhadirin`) atau `ADMIN_EMAIL`, password awal
+`ADMIN_INITIAL_PASSWORD` (default `admin123`). Dosen memakai email + `DOSEN_INITIAL_PASSWORD`
+(default `dosen123`). Password awal hanya dipakai script seed, bukan logic login.
 
 > ⚠️ `.env` berisi rahasia dan **sudah di-ignore git**. Jangan commit.
 
@@ -207,7 +223,7 @@ curl http://127.0.0.1:8000/health
 
 | Grup | Base path | Contoh |
 |---|---|---|
-| Auth | `/auth` | `POST /auth/login`, `GET /auth/check-nim/{nim}` |
+| Auth | `/auth` | `POST /auth/login`, `GET /auth/check-nim/{nim}`, `POST /auth/dosen/login`, `POST /auth/admin/login`, `GET /auth/admin/me` |
 | Dosen | `/auth/dosen/login`, `/dosen` | `GET /dosen/dashboard`, `GET /dosen/matkul?kelas_id=...&tanggal=YYYY-MM-DD`, `POST /dosen/sesi-presensi/{id}/qr` |
 | Mahasiswa | `/mahasiswa` | `GET /mahasiswa/me`, `GET /mahasiswa/jadwal` |
 | Wajah | `/mahasiswa/wajah` | `POST /mahasiswa/wajah`, `POST /mahasiswa/wajah/verify` |
@@ -252,7 +268,7 @@ pytest -k presensi -v
 | `ValidationError` saat start | Ada variabel wajib kosong di `.env` (`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `JWT_SECRET_KEY`) |
 | `/health` → `database: error` | URL/key salah, atau schema belum dijalankan |
 | `/health` → `ml_weights_ready: false` | File bobot tidak ada di `ml/models/weights/` |
-| Login dosen 503 | `DOSEN_DEFAULT_PASSWORD` kosong dan dosen belum terhubung Supabase Auth |
+| Login dosen/admin 401 | Akun Supabase Auth belum ada/terhubung; jalankan `python -m scripts.seed_auth_all_roles` |
 | Absensi GPS ditolak | Koordinat di luar geofence / akurasi > `GEOFENCE_MAX_ACCURACY_METERS` |
 | QR kedaluwarsa | Token berlaku `QR_TOKEN_TTL_SECONDS` (default 30 detik) |
 | Import `torch` lambat | Normal pada first load; model dimuat lazy |

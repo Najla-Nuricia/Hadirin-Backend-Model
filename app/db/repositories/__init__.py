@@ -1,5 +1,6 @@
 """Database repository classes."""
 
+from app.db.repositories.admin_repository import AdminRepository
 from app.db.repositories.auth_repository import AuthRepository
 from app.db.repositories.base import BaseRepository
 from app.db.repositories.dosen_repository import DosenRepository
@@ -10,6 +11,7 @@ from app.db.repositories.mahasiswa_repository import MahasiswaRepository
 from app.db.repositories.pengajuan_repository import PengajuanRepository
 
 __all__ = [
+    "AdminRepository",
     "AuthRepository",
     "BaseRepository",
     "DosenRepository",

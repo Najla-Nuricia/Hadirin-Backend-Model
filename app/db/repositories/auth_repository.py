@@ -52,6 +52,34 @@ class AuthRepository(BaseRepository):
         except Exception as exc:
             raise ExternalServiceError(f"Gagal menautkan auth user ke mahasiswa: {exc}") from exc
 
+    def link_admin_auth_user(self, auth_user_id: str, email: str) -> None:
+        """Link a Supabase Auth UUID to the `admin` row via SQL RPC."""
+        try:
+            self.client.rpc(
+                "link_auth_user",
+                {
+                    "p_auth_user_id": auth_user_id,
+                    "p_peran": "admin",
+                    "p_identifier": email.strip().lower(),
+                },
+            ).execute()
+        except Exception as exc:
+            raise ExternalServiceError(f"Gagal menautkan auth user ke admin: {exc}") from exc
+
+    def link_dosen_auth_user(self, auth_user_id: str, nip: str) -> None:
+        """Link a Supabase Auth UUID to the `dosen` row via SQL RPC."""
+        try:
+            self.client.rpc(
+                "link_auth_user",
+                {
+                    "p_auth_user_id": auth_user_id,
+                    "p_peran": "dosen",
+                    "p_identifier": nip,
+                },
+            ).execute()
+        except Exception as exc:
+            raise ExternalServiceError(f"Gagal menautkan auth user ke dosen: {exc}") from exc
+
     def verify_credentials(self, email: str, password: str) -> str | None:
         """Verify email + password against Supabase GoTrue using a disposable client."""
         auth_client = create_auth_client(self.settings)
