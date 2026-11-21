@@ -105,6 +105,9 @@ class AuthRepository(BaseRepository):
                 {"email": new_email, "email_confirm": True},
             )
         except Exception as exc:
+            msg = str(exc).lower()
+            if "already" in msg or "exists" in msg or "registered" in msg:
+                raise ConflictError("Email sudah digunakan oleh akun lain.") from exc
             raise ExternalServiceError(f"Gagal memperbarui email di Supabase Auth: {exc}") from exc
 
     def delete_auth_user(self, auth_user_id: str) -> None:

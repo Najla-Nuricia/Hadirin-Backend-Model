@@ -261,5 +261,6 @@ def get_current_admin(
         "username": settings.admin_username,
         "name": "Administrator",
         "role": "Admin",
+        "auth_user_id": str(payload.get("auth_user_id") or ""),
     }
 

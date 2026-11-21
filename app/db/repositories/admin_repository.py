@@ -32,6 +32,17 @@ class AdminRepository(BaseRepository):
         rows = res.data or []
         return rows[0] if rows else None
 
+    def update_email(self, auth_user_id: str, new_email: str) -> dict[str, Any] | None:
+        """Update the admin row's email and return the updated row, if any."""
+        res = (
+            self.client.table("admin")
+            .update({"email": new_email.strip().lower()})
+            .eq("auth_user_id", auth_user_id)
+            .execute()
+        )
+        rows = res.data or []
+        return rows[0] if rows else None
+
     def list_all(self) -> list[dict[str, Any]]:
         """Return all admin rows (used by provisioning tooling)."""
         res = self.client.table("admin").select("id,nama,email,auth_user_id").execute()

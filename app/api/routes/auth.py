@@ -14,6 +14,8 @@ from app.api.deps import (
 )
 from app.db.repositories import MahasiswaRepository
 from app.schemas.admin_auth import (
+    AdminChangeEmailRequest,
+    AdminChangePasswordRequest,
     AdminLoginRequest,
     AdminLoginResponse,
     AdminProfileResponse,
@@ -186,4 +188,64 @@ def get_admin_profile(
 ) -> AdminProfileResponse:
     """Return the authenticated admin identity from a validated JWT."""
     return AdminProfileResponse(**current_admin)
+
+
+@router.put(
+    "/auth/admin/change-password",
+    response_model=MessageResponse,
+    tags=["Admin Authentication"],
+    summary="Ubah password admin",
+    description=(
+        "Mengubah password admin di **Supabase Auth** setelah memverifikasi password saat ini. "
+        "Wajib menggunakan Bearer token admin.\n\n"
+        'Contoh request body:\n```json\n{"current_password": "admin123", "new_password": "rahasia456", "confirm_password": "rahasia456"}\n```'
+    ),
+    responses={
+        200: {
+            "description": "Password admin berhasil diubah.",
+            "content": {"application/json": {"example": {"message": "Password admin berhasil diubah."}}},
+        },
+        400: {"description": "Password saat ini salah / konfirmasi tidak cocok."},
+        401: {"description": "Bearer token admin tidak ada atau tidak valid."},
+        403: {"description": "Token bukan token admin."},
+    },
+)
+def change_admin_password(
+    payload: AdminChangePasswordRequest,
+    current_admin: dict[str, Any] = Depends(get_current_admin),
+    admin_service: AdminAuthService = Depends(get_admin_auth_service),
+) -> MessageResponse:
+    """Verify current password and update the authenticated admin's password."""
+    return admin_service.change_password(current_admin, payload)
+
+
+@router.put(
+    "/auth/admin/change-email",
+    response_model=MessageResponse,
+    tags=["Admin Authentication"],
+    summary="Ubah email admin",
+    description=(
+        "Mengubah email admin di **Supabase Auth** dan tabel `admin` setelah memverifikasi "
+        "password saat ini. Email baru tidak boleh digunakan akun lain. Login dengan "
+        "`ADMIN_USERNAME` tetap memakai email terbaru.\n\n"
+        'Contoh request body:\n```json\n{"new_email": "admin.baru@hadirin.polinema.ac.id", "current_password": "admin123"}\n```'
+    ),
+    responses={
+        200: {
+            "description": "Email admin berhasil diubah.",
+            "content": {"application/json": {"example": {"message": "Email admin berhasil diubah."}}},
+        },
+        400: {"description": "Password salah atau email baru sama dengan email lama."},
+        401: {"description": "Bearer token admin tidak ada atau tidak valid."},
+        403: {"description": "Token bukan token admin."},
+        409: {"description": "Email sudah digunakan akun lain."},
+    },
+)
+def change_admin_email(
+    payload: AdminChangeEmailRequest,
+    current_admin: dict[str, Any] = Depends(get_current_admin),
+    admin_service: AdminAuthService = Depends(get_admin_auth_service),
+) -> MessageResponse:
+    """Verify current password and update the authenticated admin's email."""
+    return admin_service.change_email(current_admin, payload)
 

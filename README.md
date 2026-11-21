@@ -223,7 +223,7 @@ curl http://127.0.0.1:8000/health
 
 | Grup | Base path | Contoh |
 |---|---|---|
-| Auth | `/auth` | `POST /auth/login`, `GET /auth/check-nim/{nim}`, `POST /auth/dosen/login`, `POST /auth/admin/login`, `GET /auth/admin/me` |
+| Auth | `/auth` | `POST /auth/login`, `GET /auth/check-nim/{nim}`, `POST /auth/dosen/login`, `POST /auth/admin/login`, `GET /auth/admin/me`, `PUT /auth/admin/change-email`, `PUT /auth/admin/change-password` |
 | Dosen | `/auth/dosen/login`, `/dosen` | `GET /dosen/dashboard`, `GET /dosen/matkul?kelas_id=...&tanggal=YYYY-MM-DD`, `POST /dosen/sesi-presensi/{id}/qr` |
 | Mahasiswa | `/mahasiswa` | `GET /mahasiswa/me`, `GET /mahasiswa/jadwal` |
 | Wajah | `/mahasiswa/wajah` | `POST /mahasiswa/wajah`, `POST /mahasiswa/wajah/verify` |
