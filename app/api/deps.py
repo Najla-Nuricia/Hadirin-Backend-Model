@@ -10,6 +10,7 @@ from app.core.config import Settings, get_settings
 from app.core.exceptions import ForbiddenError, UnauthorizedError
 from app.core.security import decode_access_token
 from app.db.repositories import (
+    AdminRepository,
     AuthRepository,
     DosenRepository,
     FotoWajahRepository,
@@ -28,6 +29,8 @@ from app.services import (
     PengajuanService,
     PresensiService,
 )
+from app.services.admin_auth_service import AdminAuthService
+from app.services.admin_jadwal_service import AdminJadwalService
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -112,6 +115,20 @@ def get_auth_service(
     )
 
 
+def get_admin_repository(
+    client: Client = Depends(get_db_client),
+) -> AdminRepository:
+    return AdminRepository(client=client)
+
+
+def get_admin_auth_service(
+    auth_repo: AuthRepository = Depends(get_auth_repository),
+    admin_repo: AdminRepository = Depends(get_admin_repository),
+    settings: Settings = Depends(get_settings),
+) -> AdminAuthService:
+    return AdminAuthService(auth_repo=auth_repo, admin_repo=admin_repo, settings=settings)
+
+
 def get_mahasiswa_service(
     mahasiswa_repo: MahasiswaRepository = Depends(get_mahasiswa_repository),
     foto_wajah_repo: FotoWajahRepository = Depends(get_foto_wajah_repository),
@@ -135,6 +152,19 @@ def get_jadwal_service(
         mahasiswa_repo=mahasiswa_repo,
         jadwal_repo=jadwal_repo,
         kehadiran_repo=kehadiran_repo,
+    )
+
+
+def get_admin_jadwal_service(
+    jadwal_repo: JadwalRepository = Depends(get_jadwal_repository),
+    mahasiswa_repo: MahasiswaRepository = Depends(get_mahasiswa_repository),
+    dosen_repo: DosenRepository = Depends(get_dosen_repository),
+) -> AdminJadwalService:
+    """Provide the admin schedule service with read/write repositories."""
+    return AdminJadwalService(
+        jadwal_repo=jadwal_repo,
+        mahasiswa_repo=mahasiswa_repo,
+        dosen_repo=dosen_repo,
     )
 
 
@@ -221,4 +251,30 @@ def get_current_dosen(
     if not dosen:
         raise UnauthorizedError("Akun dosen tidak ditemukan atau sesi tidak valid.")
     return dosen
+
+
+def get_current_admin(
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    """Validate a Bearer JWT with the `admin` role and return the admin identity.
+
+    Guard for every admin endpoint: `current_admin: dict = Depends(get_current_admin)`.
+    Tokens issued for mahasiswa/dosen are rejected with 403.
+    """
+    if credentials is None or not credentials.credentials:
+        raise UnauthorizedError("Header Authorization Bearer wajib disertakan.")
+
+    payload = decode_access_token(credentials.credentials, settings=settings)
+    if payload.get("role") != "admin":
+        raise ForbiddenError("Endpoint ini hanya untuk admin.")
+    if str(payload.get("sub") or "") != settings.admin_username:
+        raise UnauthorizedError("Token admin tidak valid.")
+
+    return {
+        "username": settings.admin_username,
+        "name": "Administrator",
+        "role": "Admin",
+        "auth_user_id": str(payload.get("auth_user_id") or ""),
+    }
 

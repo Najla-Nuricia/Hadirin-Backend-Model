@@ -3,8 +3,6 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.config import Settings
-
 DOSEN_TI3A_EMAIL = "budi.santoso@polinema.ac.id"
 DOSEN_TI3A_NIP = "198501012010121001"
 JADWAL_TI3A = "33333333-0000-0000-0000-000000000001"
@@ -14,17 +12,13 @@ TANGGAL_SESI_SEED = "2026-10-06"
 STATUSES = ("hadir", "izin", "sakit", "alfa")
 
 
-def test_dosen_login_returns_token_and_profile(
-    client: TestClient, settings: Settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(settings, "dosen_default_password", "rahasia-dosen")
-
+def test_dosen_login_returns_token_and_profile(client: TestClient) -> None:
     response = client.post(
         "/auth/dosen/login",
-        json={"email": "  Budi.Santoso@polinema.ac.id ", "password": "rahasia-dosen"},
+        json={"email": "  Budi.Santoso@polinema.ac.id ", "password": "dosen123"},
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     body = response.json()
     assert body["token_type"] == "bearer"
     assert body["access_token"]
@@ -38,19 +32,15 @@ def test_dosen_login_returns_token_and_profile(
     ("email", "password"),
     [
         (DOSEN_TI3A_EMAIL, "password-salah"),
-        ("tidak.ada@polinema.ac.id", "rahasia-dosen"),
-        ("%", "rahasia-dosen"),
+        ("tidak.ada@polinema.ac.id", "dosen123"),
+        ("%", "dosen123"),
     ],
 )
 def test_dosen_login_rejects_wrong_credentials(
     client: TestClient,
-    settings: Settings,
-    monkeypatch: pytest.MonkeyPatch,
     email: str,
     password: str,
 ) -> None:
-    monkeypatch.setattr(settings, "dosen_default_password", "rahasia-dosen")
-
     response = client.post(
         "/auth/dosen/login", json={"email": email, "password": password}
     )
@@ -59,16 +49,14 @@ def test_dosen_login_rejects_wrong_credentials(
     assert response.json()["detail"] == "Email atau password salah."
 
 
-def test_dosen_login_is_disabled_without_configured_password(
-    client: TestClient, settings: Settings, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(settings, "dosen_default_password", "")
-
+def test_dosen_login_rejects_unlinked_account(client: TestClient) -> None:
+    """A Supabase Auth identity must be linked to a dosen row to get a token."""
     response = client.post(
-        "/auth/dosen/login", json={"email": DOSEN_TI3A_EMAIL, "password": "apa-saja"}
+        "/auth/dosen/login",
+        json={"email": "mahasiswa@polinema.ac.id", "password": "dosen123"},
     )
 
-    assert response.status_code == 503
+    assert response.status_code == 401
 
 
 def test_dosen_endpoints_require_a_dosen_token(

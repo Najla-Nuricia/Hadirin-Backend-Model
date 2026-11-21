@@ -31,7 +31,6 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = Field(default=1440, ge=1)
     auth_email_domain: str = "hadirin.local"
-    dosen_default_password: str = ""
 
     # Campus GPS geofencing & QR session TTL
     geofence_name: str = "Area Kampus"
@@ -63,6 +62,13 @@ class Settings(BaseSettings):
 
     # Supabase Storage buckets (hanya dokumen pengajuan yang masih dipakai)
     storage_bucket_pengajuan: str = "dokumen-pengajuan"
+
+    # Admin & Dosen — kredensial diverifikasi Supabase Auth.
+    # Password awal hanya dipakai oleh script seed, bukan oleh endpoint login.
+    admin_username: str = Field(default="adminhadirin", min_length=1)
+    admin_email: str = Field(default="admin@hadirin.polinema.ac.id", min_length=1)
+    admin_initial_password: str = Field(default="admin123", min_length=1)
+    dosen_initial_password: str = Field(default="dosen123", min_length=1)
 
     # Testing / Development
     testing_bypass_session: bool = Field(default=False, description="Jika True, bypass is_open dan QR expiry untuk testing absensi.")

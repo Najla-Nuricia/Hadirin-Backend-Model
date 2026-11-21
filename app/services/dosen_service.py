@@ -9,7 +9,6 @@ from app.core.exceptions import (
     ConflictError,
     ForbiddenError,
     NotFoundError,
-    ServiceUnavailableError,
     UnauthorizedError,
 )
 from app.core.security import create_access_token
@@ -110,39 +109,24 @@ class DosenService:
         self.settings = settings or get_settings()
 
     def login(self, payload: DosenLoginRequest) -> DosenLoginResponse:
-        """Authenticate lecturer via Supabase Auth or configured password and issue JWT."""
-        default_pw = (self.settings.dosen_default_password or "").strip()
+        """Authenticate lecturer exclusively via Supabase Auth and issue JWT."""
         dosen = self.dosen_repo.get_by_email(payload.email)
+        auth_user_id = str(dosen.get("auth_user_id") or "") if dosen else ""
 
-        if not default_pw and (not dosen or not dosen.get("auth_user_id") or self.auth_repo is None):
-            raise ServiceUnavailableError(
-                "Login dosen belum dikonfigurasi. Isi DOSEN_DEFAULT_PASSWORD di file .env"
-            )
-
-        if not dosen:
+        if not dosen or not auth_user_id or self.auth_repo is None:
             raise UnauthorizedError("Email atau password salah.")
 
-        password_ok = False
-        if dosen.get("auth_user_id") and self.auth_repo is not None:
-            password_ok = bool(
-                self.auth_repo.verify_credentials(
-                    str(dosen.get("email") or payload.email),
-                    payload.password,
-                )
-            )
-        if not password_ok and default_pw:
-            password_ok = secrets.compare_digest(
-                payload.password.encode("utf-8"),
-                default_pw.encode("utf-8"),
-            )
-
-        if not password_ok:
+        verified_id = self.auth_repo.verify_credentials(
+            str(dosen.get("email") or payload.email),
+            payload.password,
+        )
+        if not verified_id or verified_id != auth_user_id:
             raise UnauthorizedError("Email atau password salah.")
 
         token = create_access_token(
             subject=str(dosen["nip"]),
             role="dosen",
-            extra_claims={"email": dosen.get("email") or ""},
+            extra_claims={"email": dosen.get("email") or "", "auth_user_id": auth_user_id},
             settings=self.settings,
         )
         profile = build_dosen_profile(dosen)

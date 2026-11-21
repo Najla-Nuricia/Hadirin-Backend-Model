@@ -17,7 +17,7 @@ from app.db.session import get_supabase_client
 from app.main import app
 from app.services import common
 
-DOSEN_TEST_PASSWORD = "dosen-test-password"
+DOSEN_TEST_PASSWORD = "dosen123"
 DOSEN_TI3A_EMAIL = "budi.santoso@polinema.ac.id"
 SENTINEL_NOW = datetime(2099, 1, 5, 8, 0, tzinfo=common.WIB)
 
@@ -146,9 +146,8 @@ def temp_student_no_class(client: TestClient, settings: Settings) -> Iterator[di
 
 
 @pytest.fixture
-def dosen_login(client: TestClient, settings: Settings, monkeypatch: pytest.MonkeyPatch):
-    """Enable lecturer login for tests and return a helper issuing lecturer JWT headers."""
-    monkeypatch.setattr(settings, "dosen_default_password", DOSEN_TEST_PASSWORD)
+def dosen_login(client: TestClient):
+    """Return a helper issuing lecturer JWT headers via Supabase Auth credentials."""
 
     def login(email: str = DOSEN_TI3A_EMAIL) -> dict[str, str]:
         response = client.post(
