@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import (
+    admin_master_data,
     admin_jadwal,
     auth,
     dosen,
@@ -57,6 +58,7 @@ def create_app() -> FastAPI:
     application.include_router(health.router)
     application.include_router(auth.router)
     application.include_router(admin_jadwal.router)
+    application.include_router(admin_master_data.router)
     application.include_router(kelas.router)
     application.include_router(dosen.router)
     application.include_router(pengajuan.router)

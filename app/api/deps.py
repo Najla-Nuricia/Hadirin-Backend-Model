@@ -17,7 +17,9 @@ from app.db.repositories import (
     JadwalRepository,
     KehadiranRepository,
     MahasiswaRepository,
+    MataKuliahRepository,
     PengajuanRepository,
+    TahunAjaranRepository,
 )
 from app.db.session import get_supabase_client
 from app.services import (
@@ -31,6 +33,7 @@ from app.services import (
 )
 from app.services.admin_auth_service import AdminAuthService
 from app.services.admin_jadwal_service import AdminJadwalService
+from app.services.admin_master_data_service import AdminMasterDataService
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -165,6 +168,30 @@ def get_admin_jadwal_service(
         jadwal_repo=jadwal_repo,
         mahasiswa_repo=mahasiswa_repo,
         dosen_repo=dosen_repo,
+    )
+
+
+def get_tahun_ajaran_repository(
+    client: Client = Depends(get_db_client),
+    settings: Settings = Depends(get_settings),
+) -> TahunAjaranRepository:
+    return TahunAjaranRepository(client=client, settings=settings)
+
+
+def get_mata_kuliah_repository(
+    client: Client = Depends(get_db_client),
+    settings: Settings = Depends(get_settings),
+) -> MataKuliahRepository:
+    return MataKuliahRepository(client=client, settings=settings)
+
+
+def get_admin_master_data_service(
+    tahun_ajaran_repo: TahunAjaranRepository = Depends(get_tahun_ajaran_repository),
+    mata_kuliah_repo: MataKuliahRepository = Depends(get_mata_kuliah_repository),
+) -> AdminMasterDataService:
+    return AdminMasterDataService(
+        tahun_ajaran_repo=tahun_ajaran_repo,
+        mata_kuliah_repo=mata_kuliah_repo,
     )
 
 

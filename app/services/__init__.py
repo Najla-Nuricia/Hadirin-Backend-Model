@@ -1,6 +1,7 @@
 """Domain services exports."""
 
 from app.services.auth_service import AuthService
+from app.services.admin_master_data_service import AdminMasterDataService
 from app.services.dosen_service import DosenService
 from app.services.face_recognition import FaceService
 from app.services.jadwal_service import JadwalService
@@ -10,6 +11,7 @@ from app.services.presensi_service import PresensiService
 
 __all__ = [
     "AuthService",
+    "AdminMasterDataService",
     "DosenService",
     "FaceService",
     "JadwalService",
