@@ -11,6 +11,7 @@ from app.db.repositories.mahasiswa_repository import MahasiswaRepository
 from app.db.repositories.mata_kuliah_repository import MataKuliahRepository
 from app.db.repositories.pengajuan_repository import PengajuanRepository
 from app.db.repositories.tahun_ajaran_repository import TahunAjaranRepository
+from app.db.repositories.whitelist_nim_repository import WhitelistNimRepository
 
 __all__ = [
     "AdminRepository",
@@ -24,5 +25,6 @@ __all__ = [
     "MataKuliahRepository",
     "PengajuanRepository",
     "TahunAjaranRepository",
+    "WhitelistNimRepository",
 ]
 

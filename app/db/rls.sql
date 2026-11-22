@@ -41,6 +41,7 @@ ALTER TABLE mata_kuliah                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE dosen                      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kelas                      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE mahasiswa                  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE whitelist_nim              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE foto_wajah                 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE jadwal_kuliah              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sesi_presensi              ENABLE ROW LEVEL SECURITY;
@@ -56,6 +57,13 @@ CREATE POLICY ps_select_all ON program_studi
 
 CREATE POLICY ps_modify_admin ON program_studi
     FOR ALL USING (auth_role() = 'admin');
+
+CREATE POLICY whitelist_nim_select_admin ON whitelist_nim
+    FOR SELECT USING (auth_role() = 'admin');
+
+CREATE POLICY whitelist_nim_modify_admin ON whitelist_nim
+    FOR ALL USING (auth_role() = 'admin')
+    WITH CHECK (auth_role() = 'admin');
 
 -- ─────────────────────────────────────────────────────────────
 -- 2. TAHUN AJARAN — semua bisa baca, hanya admin bisa ubah

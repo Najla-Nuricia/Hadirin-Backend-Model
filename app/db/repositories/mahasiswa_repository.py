@@ -56,6 +56,11 @@ class MahasiswaRepository(BaseRepository):
             msg = str(exc).lower()
             if "duplicate" in msg or "23505" in msg or "unique" in msg:
                 raise ConflictError("NIM atau email sudah terdaftar.") from exc
+            if "mahasiswa_nim_whitelist_fkey" in msg:
+                raise ConflictError(
+                    "NIM belum terdaftar dalam whitelist admin.",
+                    code="nim_not_whitelisted",
+                ) from exc
             raise ExternalServiceError(f"Gagal menyimpan data mahasiswa: {exc}") from exc
 
         created = self.get_by_nim(payload["nim"])

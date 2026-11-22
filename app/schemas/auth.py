@@ -37,6 +37,13 @@ class RegisterRequest(BaseModel):
             raise ValueError("Field wajib diisi.")
         return cleaned
 
+    @field_validator("nim")
+    @classmethod
+    def _validate_nim_digits(cls, value: str) -> str:
+        if not value.isdigit():
+            raise ValueError("NIM hanya boleh berisi angka.")
+        return value
+
     @field_validator("email", "no_hp", "kelas", "kelas_id")
     @classmethod
     def _strip_optional(cls, value: str | None) -> str | None:

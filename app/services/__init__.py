@@ -8,6 +8,7 @@ from app.services.jadwal_service import JadwalService
 from app.services.mahasiswa_service import MahasiswaService
 from app.services.pengajuan_service import PengajuanService
 from app.services.presensi_service import PresensiService
+from app.services.whitelist_nim_service import WhitelistNimService
 
 __all__ = [
     "AuthService",
@@ -18,5 +19,6 @@ __all__ = [
     "MahasiswaService",
     "PengajuanService",
     "PresensiService",
+    "WhitelistNimService",
 ]
 
