@@ -117,6 +117,12 @@ CREATE TABLE kelas (
 -- ─────────────────────────────────────────────────────────────
 -- 8. MAHASISWA
 -- ─────────────────────────────────────────────────────────────
+CREATE TABLE whitelist_nim (
+    nim         VARCHAR(20) PRIMARY KEY,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE mahasiswa (
     nim           VARCHAR(20)  PRIMARY KEY,
     nama_lengkap  VARCHAR(100) NOT NULL,
@@ -127,6 +133,10 @@ CREATE TABLE mahasiswa (
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE mahasiswa
+    ADD CONSTRAINT mahasiswa_nim_whitelist_fkey
+    FOREIGN KEY (nim) REFERENCES whitelist_nim(nim) ON DELETE RESTRICT;
 
 -- ─────────────────────────────────────────────────────────────
 -- 9. FOTO WAJAH MAHASISWA (embedding saja; foto mentah tidak disimpan)
@@ -251,7 +261,7 @@ DECLARE
 BEGIN
     FOREACH tbl IN ARRAY ARRAY[
         'program_studi', 'tahun_ajaran', 'ruangan', 'mata_kuliah',
-        'dosen', 'kelas', 'mahasiswa', 'jadwal_kuliah',
+        'dosen', 'kelas', 'mahasiswa', 'whitelist_nim', 'jadwal_kuliah',
         'sesi_presensi', 'kehadiran', 'pengajuan_ketidakhadiran', 'admin'
     ]
     LOOP

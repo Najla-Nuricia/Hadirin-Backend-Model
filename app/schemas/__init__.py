@@ -9,6 +9,22 @@ from app.schemas.auth import (
     TokenResponse,
     UserSummary,
 )
+from app.schemas.admin_master_data import (
+    AdminMataKuliahItem,
+    AdminMataKuliahListResponse,
+    AdminMataKuliahMutationResponse,
+    AdminMataKuliahWriteRequest,
+    AdminTahunAjaranItem,
+    AdminTahunAjaranListResponse,
+    AdminTahunAjaranMutationResponse,
+    AdminTahunAjaranWriteRequest,
+)
+from app.schemas.whitelist_nim import (
+    WhitelistNimItem,
+    WhitelistNimListResponse,
+    WhitelistNimMutationResponse,
+    WhitelistNimWriteRequest,
+)
 from app.schemas.jadwal import JadwalItem, JadwalListResponse, PengingatItem, PengingatResponse
 from app.schemas.mahasiswa import (
     MahasiswaCreateRequest,
@@ -47,6 +63,18 @@ __all__ = [
     "ActiveSessionItem",
     "ActiveSessionListResponse",
     "AttendanceRecordResponse",
+    "AdminMataKuliahItem",
+    "AdminMataKuliahListResponse",
+    "AdminMataKuliahMutationResponse",
+    "AdminMataKuliahWriteRequest",
+    "AdminTahunAjaranItem",
+    "AdminTahunAjaranListResponse",
+    "AdminTahunAjaranMutationResponse",
+    "AdminTahunAjaranWriteRequest",
+    "WhitelistNimItem",
+    "WhitelistNimListResponse",
+    "WhitelistNimMutationResponse",
+    "WhitelistNimWriteRequest",
     "ChangePasswordRequest",
     "DocumentUploadResponse",
     "FaceAttendanceRequest",

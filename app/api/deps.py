@@ -17,7 +17,10 @@ from app.db.repositories import (
     JadwalRepository,
     KehadiranRepository,
     MahasiswaRepository,
+    MataKuliahRepository,
     PengajuanRepository,
+    TahunAjaranRepository,
+    WhitelistNimRepository,
 )
 from app.db.session import get_supabase_client
 from app.services import (
@@ -28,9 +31,11 @@ from app.services import (
     MahasiswaService,
     PengajuanService,
     PresensiService,
+    WhitelistNimService,
 )
 from app.services.admin_auth_service import AdminAuthService
 from app.services.admin_jadwal_service import AdminJadwalService
+from app.services.admin_master_data_service import AdminMasterDataService
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -52,6 +57,13 @@ def get_mahasiswa_repository(
     settings: Settings = Depends(get_settings),
 ) -> MahasiswaRepository:
     return MahasiswaRepository(client=client, settings=settings)
+
+
+def get_whitelist_nim_repository(
+    client: Client = Depends(get_db_client),
+    settings: Settings = Depends(get_settings),
+) -> WhitelistNimRepository:
+    return WhitelistNimRepository(client=client, settings=settings)
 
 
 def get_jadwal_repository(
@@ -104,12 +116,14 @@ def get_dosen_service(
 def get_auth_service(
     auth_repo: AuthRepository = Depends(get_auth_repository),
     mahasiswa_repo: MahasiswaRepository = Depends(get_mahasiswa_repository),
+    whitelist_nim_repo: WhitelistNimRepository = Depends(get_whitelist_nim_repository),
     foto_wajah_repo: FotoWajahRepository = Depends(get_foto_wajah_repository),
     settings: Settings = Depends(get_settings),
 ) -> AuthService:
     return AuthService(
         auth_repo=auth_repo,
         mahasiswa_repo=mahasiswa_repo,
+        whitelist_nim_repo=whitelist_nim_repo,
         foto_wajah_repo=foto_wajah_repo,
         settings=settings,
     )
@@ -166,6 +180,36 @@ def get_admin_jadwal_service(
         mahasiswa_repo=mahasiswa_repo,
         dosen_repo=dosen_repo,
     )
+
+
+def get_tahun_ajaran_repository(
+    client: Client = Depends(get_db_client),
+    settings: Settings = Depends(get_settings),
+) -> TahunAjaranRepository:
+    return TahunAjaranRepository(client=client, settings=settings)
+
+
+def get_mata_kuliah_repository(
+    client: Client = Depends(get_db_client),
+    settings: Settings = Depends(get_settings),
+) -> MataKuliahRepository:
+    return MataKuliahRepository(client=client, settings=settings)
+
+
+def get_admin_master_data_service(
+    tahun_ajaran_repo: TahunAjaranRepository = Depends(get_tahun_ajaran_repository),
+    mata_kuliah_repo: MataKuliahRepository = Depends(get_mata_kuliah_repository),
+) -> AdminMasterDataService:
+    return AdminMasterDataService(
+        tahun_ajaran_repo=tahun_ajaran_repo,
+        mata_kuliah_repo=mata_kuliah_repo,
+    )
+
+
+def get_whitelist_nim_service(
+    repository: WhitelistNimRepository = Depends(get_whitelist_nim_repository),
+) -> WhitelistNimService:
+    return WhitelistNimService(repository=repository)
 
 
 def get_face_service(

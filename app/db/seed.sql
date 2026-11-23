@@ -95,6 +95,11 @@ INSERT INTO kelas (id, nama, tingkat, program_studi_kode, tahun_ajaran_id, kapas
 -- ─────────────────────────────────────────────────────────────
 -- MAHASISWA (demo accounts)
 -- ─────────────────────────────────────────────────────────────
+INSERT INTO whitelist_nim (nim) VALUES
+    ('2211001'), ('2211002'), ('2211003'), ('2211004'), ('2211005'),
+    ('2211006'), ('2211007'), ('2211008'), ('2211009'), ('2211010'),
+    ('2341720001');
+
 INSERT INTO mahasiswa (nim, nama_lengkap, email, kelas_id) VALUES
     ('2211001', 'Adi Saputra',    'adi.saputra@student.polinema.ac.id',    '22222222-0000-0000-0000-000000000005'),
     ('2211002', 'Budi Santoso',   'budi.s@student.polinema.ac.id',         '22222222-0000-0000-0000-000000000005'),

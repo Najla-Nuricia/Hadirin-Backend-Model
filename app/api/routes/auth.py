@@ -11,8 +11,9 @@ from app.api.deps import (
     get_current_student,
     get_mahasiswa_repository,
     get_mahasiswa_service,
+    get_whitelist_nim_repository,
 )
-from app.db.repositories import MahasiswaRepository
+from app.db.repositories import MahasiswaRepository, WhitelistNimRepository
 from app.schemas.admin_auth import (
     AdminChangeEmailRequest,
     AdminChangePasswordRequest,
@@ -39,12 +40,18 @@ router = APIRouter(tags=["Authentication"])
 def check_nim_registered(
     nim: str,
     mahasiswa_repo: MahasiswaRepository = Depends(get_mahasiswa_repository),
+    whitelist_repo: WhitelistNimRepository = Depends(get_whitelist_nim_repository),
 ) -> dict[str, object]:
     """Check whether a NIM is already registered before continuing registration steps."""
     cleaned = nim.strip()
+    whitelisted = bool(whitelist_repo.get_by_nim(cleaned))
+    registered = bool(mahasiswa_repo.get_by_nim(cleaned)) if whitelisted else False
     return {
         "nim": cleaned,
-        "registered": bool(mahasiswa_repo.get_by_nim(cleaned)),
+        "whitelisted": whitelisted,
+        "registered": registered,
+        "can_register": whitelisted and not registered,
+        "status": "sudah_terdaftar" if registered else "siap_registrasi" if whitelisted else "belum_whitelist",
     }
 
 
