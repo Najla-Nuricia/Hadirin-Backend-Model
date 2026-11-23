@@ -19,6 +19,9 @@ from app.db.repositories import (
     MahasiswaRepository,
     MataKuliahRepository,
     PengajuanRepository,
+    ProgramStudiRepository,
+    RuanganRepository,
+    SesiKuliahRepository,
     TahunAjaranRepository,
     WhitelistNimRepository,
 )
@@ -36,6 +39,7 @@ from app.services import (
 from app.services.admin_auth_service import AdminAuthService
 from app.services.admin_jadwal_service import AdminJadwalService
 from app.services.admin_master_data_service import AdminMasterDataService
+from app.services.admin_options_service import AdminOptionsService
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -203,6 +207,42 @@ def get_admin_master_data_service(
     return AdminMasterDataService(
         tahun_ajaran_repo=tahun_ajaran_repo,
         mata_kuliah_repo=mata_kuliah_repo,
+    )
+
+
+def get_program_studi_repository(
+    client: Client = Depends(get_db_client),
+    settings: Settings = Depends(get_settings),
+) -> ProgramStudiRepository:
+    return ProgramStudiRepository(client=client, settings=settings)
+
+
+def get_ruangan_repository(
+    client: Client = Depends(get_db_client),
+    settings: Settings = Depends(get_settings),
+) -> RuanganRepository:
+    return RuanganRepository(client=client, settings=settings)
+
+
+def get_sesi_kuliah_repository(
+    client: Client = Depends(get_db_client),
+    settings: Settings = Depends(get_settings),
+) -> SesiKuliahRepository:
+    return SesiKuliahRepository(client=client, settings=settings)
+
+
+def get_admin_options_service(
+    dosen_repo: DosenRepository = Depends(get_dosen_repository),
+    program_studi_repo: ProgramStudiRepository = Depends(get_program_studi_repository),
+    ruangan_repo: RuanganRepository = Depends(get_ruangan_repository),
+    sesi_kuliah_repo: SesiKuliahRepository = Depends(get_sesi_kuliah_repository),
+) -> AdminOptionsService:
+    """Provide read-only master-data options for the admin schedule form."""
+    return AdminOptionsService(
+        dosen_repo=dosen_repo,
+        program_studi_repo=program_studi_repo,
+        ruangan_repo=ruangan_repo,
+        sesi_kuliah_repo=sesi_kuliah_repo,
     )
 
 
