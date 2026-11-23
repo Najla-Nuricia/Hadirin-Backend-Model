@@ -22,6 +22,15 @@ DOSEN_COLUMNS = "nip, nama, email, no_hp, auth_user_id"
 class DosenRepository(BaseRepository):
     """Supabase queries for `dosen`, `jadwal_kuliah`, `sesi_presensi`, and class rosters."""
 
+    def list_all(self, search: str | None = None) -> list[dict[str, Any]]:
+        """List every lecturer for admin option pickers, optionally filtered by name/NIP/email."""
+        query = self.client.table("dosen").select(DOSEN_COLUMNS)
+        if search and search.strip():
+            term = search.strip()
+            query = query.or_(f"nama.ilike.%{term}%,nip.ilike.%{term}%,email.ilike.%{term}%")
+        res = query.order("nama").execute()
+        return res.data or []
+
     def get_by_email(self, email: str) -> dict[str, Any] | None:
         """Fetch lecturer profile by lowercase email."""
         res = (

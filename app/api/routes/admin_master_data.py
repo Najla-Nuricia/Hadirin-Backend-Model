@@ -5,12 +5,20 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.api.deps import get_admin_master_data_service, get_current_admin
+from app.api.deps import (
+    get_admin_master_data_service,
+    get_admin_options_service,
+    get_current_admin,
+)
 from app.schemas.admin_master_data import (
+    AdminDosenListResponse,
     AdminMataKuliahItem,
     AdminMataKuliahListResponse,
     AdminMataKuliahMutationResponse,
     AdminMataKuliahWriteRequest,
+    AdminProgramStudiListResponse,
+    AdminRuanganListResponse,
+    AdminSesiKuliahListResponse,
     AdminTahunAjaranItem,
     AdminTahunAjaranListResponse,
     AdminTahunAjaranMutationResponse,
@@ -18,6 +26,7 @@ from app.schemas.admin_master_data import (
 )
 from app.schemas.auth import MessageResponse
 from app.services.admin_master_data_service import AdminMasterDataService
+from app.services.admin_options_service import AdminOptionsService
 
 
 router = APIRouter(prefix="/admin", tags=["Admin Master Data"])
@@ -121,3 +130,55 @@ def delete_mata_kuliah(
     service: AdminMasterDataService = Depends(get_admin_master_data_service),
 ) -> MessageResponse:
     return service.delete_mata_kuliah(kode)
+
+
+@router.get(
+    "/dosen",
+    response_model=AdminDosenListResponse,
+    summary="Daftar dosen untuk pilihan jadwal (admin)",
+    description="Mengambil seluruh dosen (termasuk Dosen Testing) untuk dropdown dosen pengampu.",
+)
+def list_admin_dosen(
+    search: str | None = Query(default=None, max_length=100),
+    _: dict[str, Any] = Depends(get_current_admin),
+    service: AdminOptionsService = Depends(get_admin_options_service),
+) -> AdminDosenListResponse:
+    return service.list_dosen(search)
+
+
+@router.get(
+    "/program-studi",
+    response_model=AdminProgramStudiListResponse,
+    summary="Daftar program studi (admin)",
+)
+def list_admin_program_studi(
+    search: str | None = Query(default=None, max_length=100),
+    _: dict[str, Any] = Depends(get_current_admin),
+    service: AdminOptionsService = Depends(get_admin_options_service),
+) -> AdminProgramStudiListResponse:
+    return service.list_program_studi(search)
+
+
+@router.get(
+    "/ruangan",
+    response_model=AdminRuanganListResponse,
+    summary="Daftar ruangan (admin)",
+)
+def list_admin_ruangan(
+    search: str | None = Query(default=None, max_length=100),
+    _: dict[str, Any] = Depends(get_current_admin),
+    service: AdminOptionsService = Depends(get_admin_options_service),
+) -> AdminRuanganListResponse:
+    return service.list_ruangan(search)
+
+
+@router.get(
+    "/sesi-kuliah",
+    response_model=AdminSesiKuliahListResponse,
+    summary="Daftar sesi kuliah (admin)",
+)
+def list_admin_sesi_kuliah(
+    _: dict[str, Any] = Depends(get_current_admin),
+    service: AdminOptionsService = Depends(get_admin_options_service),
+) -> AdminSesiKuliahListResponse:
+    return service.list_sesi_kuliah()

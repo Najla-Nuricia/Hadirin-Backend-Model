@@ -227,6 +227,8 @@ curl http://127.0.0.1:8000/health
 | Dosen | `/auth/dosen/login`, `/dosen` | `GET /dosen/dashboard`, `GET /dosen/matkul?kelas_id=...&tanggal=YYYY-MM-DD`, `POST /dosen/sesi-presensi/{id}/qr` |
 | Mahasiswa | `/mahasiswa` | `GET /mahasiswa/me`, `GET /mahasiswa/jadwal` |
 | Admin Jadwal | `/admin/jadwal` | `GET /admin/jadwal` (filter `tahun_ajaran`, `semester`, `tingkat`, `kelas`), `POST /admin/jadwal`, `PUT /admin/jadwal/{jadwal_id}` |
+| Admin Master Data | `/admin` | `GET /admin/tahun-ajaran`, `GET /admin/mata-kuliah`, `GET /admin/dosen`, `GET /admin/program-studi`, `GET /admin/ruangan`, `GET /admin/sesi-kuliah` |
+| Kelas | `/kelas` | `GET /kelas` (filter `tahun_ajaran`, `program_studi_kode`) |
 | Wajah | `/mahasiswa/wajah` | `POST /mahasiswa/wajah`, `POST /mahasiswa/wajah/verify` |
 | Pengajuan | `/mahasiswa/pengajuan` | `POST /mahasiswa/pengajuan` |
 | Presensi | `/attendance` | `POST /attendance/qr`, `/gps`, `/face` |
