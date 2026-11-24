@@ -111,6 +111,36 @@ class AdminMataKuliahItem(BaseModel):
     updated_at: str | None = None
 
 
+class AdminDosenItem(BaseModel):
+    """Response item for a lecturer option."""
+
+    nip: str
+    nama: str
+    email: str
+
+
+class AdminProgramStudiItem(BaseModel):
+    """Response item for a study-program option."""
+
+    kode: str
+    nama: str
+
+
+class AdminRuanganItem(BaseModel):
+    """Response item for a room option."""
+
+    kode: str
+    nama: str
+
+
+class AdminSesiKuliahItem(BaseModel):
+    """Response item for a class time-slot option."""
+
+    nomor: int
+    jam_mulai: str | None = None
+    jam_selesai: str | None = None
+
+
 class AdminTahunAjaranListResponse(BaseModel):
     data: list[AdminTahunAjaranItem]
     total: int
@@ -118,6 +148,26 @@ class AdminTahunAjaranListResponse(BaseModel):
 
 class AdminMataKuliahListResponse(BaseModel):
     data: list[AdminMataKuliahItem]
+    total: int
+
+
+class AdminDosenListResponse(BaseModel):
+    data: list[AdminDosenItem]
+    total: int
+
+
+class AdminProgramStudiListResponse(BaseModel):
+    data: list[AdminProgramStudiItem]
+    total: int
+
+
+class AdminRuanganListResponse(BaseModel):
+    data: list[AdminRuanganItem]
+    total: int
+
+
+class AdminSesiKuliahListResponse(BaseModel):
+    data: list[AdminSesiKuliahItem]
     total: int
 
 

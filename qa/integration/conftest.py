@@ -44,6 +44,10 @@ def _cleanup_student_by_nim(settings: Settings, nim: str) -> None:
     foto_repo.delete_by_nim(nim)
     supabase.table("kehadiran").delete().eq("nim", nim).execute()
     mhs_repo.delete_by_nim(nim)
+    try:
+        supabase.table("whitelist_nim").delete().eq("nim", nim).execute()
+    except Exception:
+        pass
     if row.get("auth_user_id"):
         try:
             auth_repo.delete_auth_user(str(row["auth_user_id"]))
@@ -79,6 +83,7 @@ def temp_student(client: TestClient, settings: Settings) -> Iterator[dict[str, s
     unique_nim = f"2488{uuid4().hex[:6]}"
     password = "TempPassword123!"
     email = f"{unique_nim}@student.polinema.ac.id"
+    get_supabase_client(settings).table("whitelist_nim").upsert({"nim": unique_nim}).execute()
 
     reg_resp = client.post(
         "/auth/register",
@@ -118,6 +123,7 @@ def temp_student_no_class(client: TestClient, settings: Settings) -> Iterator[di
     unique_nim = f"2477{uuid4().hex[:6]}"
     password = "TempPassword123!"
     email = f"{unique_nim}@student.polinema.ac.id"
+    get_supabase_client(settings).table("whitelist_nim").upsert({"nim": unique_nim}).execute()
 
     reg_resp = client.post(
         "/auth/register",

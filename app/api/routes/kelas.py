@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from supabase import Client
 
@@ -14,6 +14,9 @@ router = APIRouter(prefix="/kelas", tags=["Kelas & Mata Kuliah"])
 class KelasItem(BaseModel):
     id: str
     nama: str
+    tingkat: int
+    program_studi_kode: str
+    tahun_ajaran_id: str
 
 
 class KelasListResponse(BaseModel):
@@ -35,12 +38,48 @@ class MatkulListResponse(BaseModel):
 
 @router.get("", response_model=KelasListResponse)
 def list_kelas(
+    tahun_ajaran: str | None = Query(
+        default=None,
+        description="Filter tahun ajaran ('2026/2027').",
+        examples=["2026/2027"],
+    ),
+    program_studi_kode: str | None = Query(
+        default=None,
+        description="Filter kode program studi ('D4-TI').",
+        examples=["D4-TI"],
+    ),
     client: Client = Depends(get_db_client),
 ) -> KelasListResponse:
-    """Return all available class names from the `kelas` table (public, no auth required)."""
-    res = client.table("kelas").select("id,nama").order("nama").execute()
+    """Return classes with level/prodi/year metadata (public, no auth required)."""
+    query = client.table("kelas").select(
+        "id,nama,tingkat,program_studi_kode,tahun_ajaran_id"
+    )
+    if program_studi_kode and program_studi_kode.strip():
+        query = query.eq("program_studi_kode", program_studi_kode.strip().upper())
+    if tahun_ajaran and tahun_ajaran.strip():
+        tahun_res = (
+            client.table("tahun_ajaran")
+            .select("id")
+            .eq("tahun", tahun_ajaran.strip())
+            .limit(1)
+            .execute()
+        )
+        if not tahun_res.data:
+            return KelasListResponse(data=[], total=0)
+        query = query.eq("tahun_ajaran_id", tahun_res.data[0]["id"])
+
+    res = query.order("tingkat").order("nama").execute()
     rows = res.data or []
-    items = [KelasItem(id=str(r["id"]), nama=str(r["nama"])) for r in rows]
+    items = [
+        KelasItem(
+            id=str(row["id"]),
+            nama=str(row["nama"]),
+            tingkat=int(row["tingkat"]),
+            program_studi_kode=str(row["program_studi_kode"]),
+            tahun_ajaran_id=str(row["tahun_ajaran_id"]),
+        )
+        for row in rows
+    ]
     return KelasListResponse(data=items, total=len(items))
 
 

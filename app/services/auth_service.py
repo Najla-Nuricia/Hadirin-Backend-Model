@@ -3,7 +3,12 @@
 from app.core.config import Settings, get_settings
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError, UnauthorizedError
 from app.core.security import create_access_token, hash_password
-from app.db.repositories import AuthRepository, FotoWajahRepository, MahasiswaRepository
+from app.db.repositories import (
+    AuthRepository,
+    FotoWajahRepository,
+    MahasiswaRepository,
+    WhitelistNimRepository,
+)
 from app.schemas.auth import (
     ChangePasswordRequest,
     LoginRequest,
@@ -23,18 +28,25 @@ class AuthService:
         self,
         auth_repo: AuthRepository,
         mahasiswa_repo: MahasiswaRepository,
+        whitelist_nim_repo: WhitelistNimRepository,
         foto_wajah_repo: FotoWajahRepository,
         settings: Settings | None = None,
     ) -> None:
         self.auth_repo = auth_repo
         self.mahasiswa_repo = mahasiswa_repo
+        self.whitelist_nim_repo = whitelist_nim_repo
         self.foto_wajah_repo = foto_wajah_repo
         self.settings = settings or get_settings()
 
     def register(self, payload: RegisterRequest) -> RegisterResponse:
         """Register a new student in `auth.users` and `mahasiswa`, linked atomically."""
+        if not self.whitelist_nim_repo.get_by_nim(payload.nim):
+            raise ConflictError(
+                "NIM belum terdaftar dalam whitelist admin.",
+                code="nim_not_whitelisted",
+            )
         if self.mahasiswa_repo.get_by_nim(payload.nim):
-            raise ConflictError("NIM sudah terdaftar.")
+            raise ConflictError("NIM sudah terdaftar.", code="nim_already_registered")
 
         if payload.email and self.mahasiswa_repo.get_by_email(payload.email):
             raise ConflictError("Email sudah digunakan oleh mahasiswa lain.")
