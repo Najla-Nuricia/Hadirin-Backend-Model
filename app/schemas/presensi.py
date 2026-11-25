@@ -95,6 +95,38 @@ class QrAttendanceRequest(BaseModel):
     catatan: str | None = Field(default=None, max_length=255)
 
 
+class ValidateRoomQrRequest(BaseModel):
+    """Payload to validate static door QR token before student proceeds to face scan."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    qr_token: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        validation_alias=AliasChoices("qr_token", "code"),
+    )
+    latitude: float | None = Field(default=None, ge=-90.0, le=90.0)
+    longitude: float | None = Field(default=None, ge=-180.0, le=180.0)
+    accuracy: float | None = Field(default=None, ge=0.0)
+
+
+class ValidateRoomQrResponse(BaseModel):
+    """Validation response confirming the student has an active class in the scanned room."""
+
+    valid: bool = True
+    ruangan_kode: str
+    ruangan_nama: str
+    sesi_presensi_id: str
+    jadwal_id: str
+    matkul_nama: str
+    jam_mulai: str | None = None
+    jam_selesai: str | None = None
+    kelas_nama: str | None = None
+    qr_token: str
+    message: str
+
+
 class FaceAttendanceRequest(BaseModel):
     """JSON payload variant for face-verified attendance check-in."""
 

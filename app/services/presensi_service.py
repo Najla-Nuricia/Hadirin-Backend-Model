@@ -25,6 +25,8 @@ from app.schemas.presensi import (
     PresensiHistoryResponse,
     PresensiSummaryResponse,
     QrAttendanceRequest,
+    ValidateRoomQrRequest,
+    ValidateRoomQrResponse,
 )
 from app.services import common
 from app.services.common import STATUS_LABELS, format_hhmm, haversine_meters
@@ -250,7 +252,10 @@ class PresensiService:
 
         sesi = self.kehadiran_repo.get_sesi_by_qr_token(payload.qr_token)
         if not sesi:
-            raise ForbiddenError("QR Code tidak valid atau sudah diganti. Pindai QR terbaru.")
+            try:
+                sesi = self._resolve_target_session(student, None, payload.qr_token)
+            except Exception:
+                raise ForbiddenError("QR Code tidak valid atau sudah diganti. Pindai QR terbaru.")
         jadwal = self._validate_open_session(sesi, student)
 
         existing = self.kehadiran_repo.get_kehadiran_by_sesi_and_nim(str(sesi["id"]), nim)
@@ -304,6 +309,44 @@ class PresensiService:
             courseName=course_name,
             kelas=jadwal.get("kelas_nama") if jadwal else None,
             distance_meters=round(distance, 2) if distance is not None else None,
+        )
+
+    def validate_room_qr(
+        self,
+        nim: str,
+        payload: ValidateRoomQrRequest,
+    ) -> ValidateRoomQrResponse:
+        """Validate static door QR scanned by student before unlocking live camera face scan."""
+        student = self._get_student_or_404(nim)
+        if payload.latitude is not None and payload.longitude is not None:
+            self._validate_gps_radius(
+                payload.latitude,
+                payload.longitude,
+                accuracy=payload.accuracy,
+            )
+
+        sesi = self._resolve_target_session(student, sesi_presensi_id=None, qr_token=payload.qr_token)
+        jadwal = self._validate_open_session(sesi, student, bypass_time_checks=self.settings.testing_bypass_session)
+
+        ruangan_kode = str(jadwal.get("ruangan_kode") if jadwal else "").strip()
+        ruangan_nama = str((jadwal.get("ruangan_nama") if jadwal else "") or ruangan_kode or "Ruangan Kelas").strip()
+        matkul_nama = str((jadwal.get("matkul_nama") if jadwal else "") or "Perkuliahan").strip()
+        jam_mulai = format_hhmm(jadwal.get("jam_mulai")) if (jadwal and jadwal.get("jam_mulai")) else None
+        jam_selesai = format_hhmm(jadwal.get("jam_selesai")) if (jadwal and jadwal.get("jam_selesai")) else None
+        kelas_nama = (jadwal.get("kelas_nama") if jadwal else None) or self._extract_student_kelas_nama(student)
+
+        return ValidateRoomQrResponse(
+            valid=True,
+            ruangan_kode=ruangan_kode,
+            ruangan_nama=ruangan_nama,
+            sesi_presensi_id=str(sesi["id"]),
+            jadwal_id=str(sesi["jadwal_id"]),
+            matkul_nama=matkul_nama,
+            jam_mulai=jam_mulai,
+            jam_selesai=jam_selesai,
+            kelas_nama=kelas_nama,
+            qr_token=payload.qr_token,
+            message=f"Pintu ruangan {ruangan_nama} terverifikasi untuk {matkul_nama}. Lanjutkan ke verifikasi wajah.",
         )
 
     def submit_face_attendance(
@@ -406,9 +449,70 @@ class PresensiService:
 
         if qr_token:
             sesi = self.kehadiran_repo.get_sesi_by_qr_token(qr_token)
-            if not sesi:
-                raise ForbiddenError("Token QR sesi presensi tidak valid.")
-            return sesi
+            if sesi:
+                return sesi
+
+            # Support static door QR token format: "HADIRIN:ROOM:<KODE>" or "<KODE>"
+            cleaned_token = qr_token.strip()
+            if cleaned_token.upper().startswith("HADIRIN:ROOM:"):
+                room_code = cleaned_token[len("HADIRIN:ROOM:"):].strip().upper()
+            else:
+                room_code = cleaned_token.upper()
+
+            kelas_nama = self._extract_student_kelas_nama(student)
+            if not kelas_nama:
+                raise ForbiddenError("Akun Anda belum terdaftar di kelas.")
+
+            jadwals = self.jadwal_repo.list_by_kelas_nama(kelas_nama)
+            if not jadwals:
+                raise NotFoundError(f"Tidak ada jadwal ditemukan untuk kelas {kelas_nama}.")
+
+            matched_jadwals = [
+                j for j in jadwals
+                if str(j.get("ruangan_kode") or "").strip().upper() == room_code
+                or str(j.get("ruangan_nama") or "").strip().upper() == room_code
+            ]
+
+            if not matched_jadwals:
+                if self.settings.testing_bypass_session and jadwals:
+                    matched_jadwals = jadwals
+                else:
+                    raise ForbiddenError(
+                        f"QR Ruangan '{room_code}' tidak cocok dengan jadwal kelas '{kelas_nama}' Anda hari ini."
+                    )
+
+            target_jadwal = matched_jadwals[0]
+            today_iso = common.now_wib().date().isoformat()
+            target_jadwal_id = str(target_jadwal["id"])
+
+            existing = self.kehadiran_repo.get_sesi_by_jadwal_and_date(target_jadwal_id, today_iso)
+            if existing:
+                if not existing.get("is_open") and self.settings.testing_bypass_session:
+                    self.kehadiran_repo.client.table("sesi_presensi").update({"is_open": True}).eq("id", existing["id"]).execute()
+                    existing = {**existing, "is_open": True}
+                return existing
+
+            if self.settings.testing_bypass_session:
+                created = self.kehadiran_repo.create_sesi_presensi(
+                    {
+                        "jadwal_id": target_jadwal_id,
+                        "tanggal": today_iso,
+                        "is_open": True,
+                        "qr_token": f"ROOM_{room_code}_{uuid4().hex[:8]}",
+                    }
+                )
+                return created
+
+            open_sesi = self.kehadiran_repo.list_open_sesi_by_jadwal_ids(
+                [target_jadwal_id],
+                tanggal_iso=today_iso,
+            )
+            if open_sesi:
+                return open_sesi[0]
+
+            raise NotFoundError(
+                f"Sesi presensi di ruangan '{room_code}' belum dibuka untuk mata kuliah '{target_jadwal.get('matkul_nama', '')}'."
+            )
 
         kelas_nama = self._extract_student_kelas_nama(student)
         if not kelas_nama:
