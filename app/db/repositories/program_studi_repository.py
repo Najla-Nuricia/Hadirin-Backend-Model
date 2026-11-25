@@ -21,3 +21,17 @@ class ProgramStudiRepository(BaseRepository):
             return query.order("kode").execute().data or []
         except Exception as exc:
             raise ExternalServiceError(f"Gagal mengambil daftar program studi: {exc}") from exc
+
+    def get_by_kode(self, kode: str) -> dict[str, Any] | None:
+        try:
+            response = (
+                self.client.table("program_studi")
+                .select(_COLUMNS)
+                .eq("kode", kode.strip().upper())
+                .limit(1)
+                .execute()
+            )
+            return self.first_or_none(response.data)
+        except Exception as exc:
+            raise ExternalServiceError(f"Gagal mengambil program studi: {exc}") from exc
+

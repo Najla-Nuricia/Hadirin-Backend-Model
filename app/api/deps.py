@@ -16,6 +16,7 @@ from app.db.repositories import (
     FotoWajahRepository,
     JadwalRepository,
     KehadiranRepository,
+    KelasRepository,
     MahasiswaRepository,
     MataKuliahRepository,
     PengajuanRepository,
@@ -200,14 +201,11 @@ def get_mata_kuliah_repository(
     return MataKuliahRepository(client=client, settings=settings)
 
 
-def get_admin_master_data_service(
-    tahun_ajaran_repo: TahunAjaranRepository = Depends(get_tahun_ajaran_repository),
-    mata_kuliah_repo: MataKuliahRepository = Depends(get_mata_kuliah_repository),
-) -> AdminMasterDataService:
-    return AdminMasterDataService(
-        tahun_ajaran_repo=tahun_ajaran_repo,
-        mata_kuliah_repo=mata_kuliah_repo,
-    )
+def get_kelas_repository(
+    client: Client = Depends(get_db_client),
+    settings: Settings = Depends(get_settings),
+) -> KelasRepository:
+    return KelasRepository(client=client, settings=settings)
 
 
 def get_program_studi_repository(
@@ -229,6 +227,29 @@ def get_sesi_kuliah_repository(
     settings: Settings = Depends(get_settings),
 ) -> SesiKuliahRepository:
     return SesiKuliahRepository(client=client, settings=settings)
+
+
+def get_admin_master_data_service(
+    tahun_ajaran_repo: TahunAjaranRepository = Depends(get_tahun_ajaran_repository),
+    mata_kuliah_repo: MataKuliahRepository = Depends(get_mata_kuliah_repository),
+    ruangan_repo: RuanganRepository = Depends(get_ruangan_repository),
+    dosen_repo: DosenRepository = Depends(get_dosen_repository),
+    kelas_repo: KelasRepository = Depends(get_kelas_repository),
+    program_studi_repo: ProgramStudiRepository = Depends(get_program_studi_repository),
+    auth_repo: AuthRepository = Depends(get_auth_repository),
+    settings: Settings = Depends(get_settings),
+) -> AdminMasterDataService:
+    """Provide the master-data CRUD service with every repository it needs."""
+    return AdminMasterDataService(
+        tahun_ajaran_repo=tahun_ajaran_repo,
+        mata_kuliah_repo=mata_kuliah_repo,
+        ruangan_repo=ruangan_repo,
+        dosen_repo=dosen_repo,
+        kelas_repo=kelas_repo,
+        program_studi_repo=program_studi_repo,
+        auth_repo=auth_repo,
+        settings=settings,
+    )
 
 
 def get_admin_options_service(
