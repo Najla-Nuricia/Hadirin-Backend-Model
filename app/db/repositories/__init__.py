@@ -7,6 +7,7 @@ from app.db.repositories.dosen_repository import DosenRepository
 from app.db.repositories.foto_wajah_repository import FotoWajahRepository
 from app.db.repositories.jadwal_repository import JadwalRepository
 from app.db.repositories.kehadiran_repository import KehadiranRepository
+from app.db.repositories.kelas_repository import KelasRepository
 from app.db.repositories.mahasiswa_repository import MahasiswaRepository
 from app.db.repositories.mata_kuliah_repository import MataKuliahRepository
 from app.db.repositories.pengajuan_repository import PengajuanRepository
@@ -24,6 +25,7 @@ __all__ = [
     "FotoWajahRepository",
     "JadwalRepository",
     "KehadiranRepository",
+    "KelasRepository",
     "MahasiswaRepository",
     "MataKuliahRepository",
     "PengajuanRepository",

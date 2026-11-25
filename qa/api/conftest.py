@@ -9,6 +9,7 @@ validation, JWT auth and role checks.
 
 from typing import Any, Callable
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -25,7 +26,7 @@ from app.api.deps import (
     get_whitelist_nim_repository,
 )
 from app.core.config import Settings, get_settings
-from app.core.exceptions import ConflictError
+from app.core.exceptions import ConflictError, ExternalServiceError
 from app.core.security import create_access_token
 from app.main import app
 
@@ -323,6 +324,247 @@ class FakeDosenRepo:
         if nip.strip() != "999999999001":
             return None
         return {"nip": "999999999001", "nama": "Dosen Testing", "email": "dosentesting@hadirin.test"}
+
+
+class FakeRuanganRepo:
+    """In-memory ``RuanganRepository`` covering the full CRUD surface."""
+
+    def __init__(
+        self, rows: list[dict[str, Any]] | None = None, referenced: bool = False
+    ) -> None:
+        self.rows = [dict(row) for row in (rows or [])]
+        self.referenced = referenced
+
+    def list_all(self, search: str | None = None) -> list[dict[str, Any]]:
+        rows = self.rows
+        if search and search.strip():
+            term = search.strip().lower()
+            rows = [
+                row
+                for row in rows
+                if term in row["kode"].lower() or term in row["nama"].lower()
+            ]
+        return [dict(row) for row in rows]
+
+    def get_by_kode(self, kode: str) -> dict[str, Any] | None:
+        return next((row for row in self.rows if row["kode"] == kode), None)
+
+    def create(self, fields: dict[str, Any]) -> dict[str, Any]:
+        self.rows.append(dict(fields))
+        return dict(fields)
+
+    def update(self, kode: str, fields: dict[str, Any]) -> dict[str, Any] | None:
+        row = self.get_by_kode(kode)
+        if row is None:
+            return None
+        row.update(fields)
+        return dict(row)
+
+    def has_references(self, kode: str) -> bool:
+        return self.referenced
+
+    def delete(self, kode: str) -> None:
+        self.rows = [row for row in self.rows if row["kode"] != kode]
+
+
+class FakeDosenWriteRepo:
+    """In-memory ``DosenRepository`` covering the full CRUD surface."""
+
+    def __init__(
+        self,
+        rows: list[dict[str, Any]] | None = None,
+        referenced: bool = False,
+        fail_on_create: bool = False,
+    ) -> None:
+        self.rows = [dict(row) for row in (rows or [])]
+        self.referenced = referenced
+        self.fail_on_create = fail_on_create
+
+    def list_all(self, search: str | None = None) -> list[dict[str, Any]]:
+        rows = self.rows
+        if search and search.strip():
+            term = search.strip().lower()
+            rows = [
+                row
+                for row in rows
+                if term in str(row.get("nama") or "").lower()
+                or term in str(row.get("nip") or "").lower()
+                or term in str(row.get("email") or "").lower()
+            ]
+        return [dict(row) for row in rows]
+
+    def get_by_nip(self, nip: str) -> dict[str, Any] | None:
+        return next((row for row in self.rows if row["nip"] == nip.strip()), None)
+
+    def get_by_email(self, email: str) -> dict[str, Any] | None:
+        target = email.strip().lower()
+        return next(
+            (
+                row
+                for row in self.rows
+                if str(row.get("email") or "").lower() == target
+            ),
+            None,
+        )
+
+    def create(self, fields: dict[str, Any]) -> dict[str, Any]:
+        if self.fail_on_create:
+            raise ExternalServiceError("simulasi kegagalan insert dosen")
+        row = {
+            "email": None,
+            "no_hp": None,
+            "auth_user_id": None,
+            **fields,
+        }
+        self.rows.append(row)
+        return dict(row)
+
+    def update(self, nip: str, fields: dict[str, Any]) -> dict[str, Any] | None:
+        row = self.get_by_nip(nip)
+        if row is None:
+            return None
+        row.update(fields)
+        return dict(row)
+
+    def has_references(self, nip: str) -> bool:
+        return self.referenced
+
+    def delete(self, nip: str) -> None:
+        self.rows = [row for row in self.rows if row["nip"] != nip.strip()]
+
+
+class FakeProgramStudiRepo:
+    """In-memory ``ProgramStudiRepository`` with lookup by kode."""
+
+    def __init__(self, rows: list[dict[str, Any]] | None = None) -> None:
+        self.rows = [dict(row) for row in (rows or [])]
+
+    def list_all(self, search: str | None = None) -> list[dict[str, Any]]:
+        return [dict(row) for row in self.rows]
+
+    def get_by_kode(self, kode: str) -> dict[str, Any] | None:
+        return next((row for row in self.rows if row["kode"] == kode.strip().upper()), None)
+
+
+class FakeKelasRepo:
+    """In-memory ``KelasRepository`` covering the full CRUD surface."""
+
+    def __init__(
+        self,
+        rows: list[dict[str, Any]] | None = None,
+        referenced: bool = False,
+        program_studi: dict[str, str] | None = None,
+        tahun_ajaran: dict[str, str] | None = None,
+    ) -> None:
+        self.rows = [dict(row) for row in (rows or [])]
+        self.referenced = referenced
+        self.program_studi = program_studi or {}
+        self.tahun_ajaran = tahun_ajaran or {}
+
+    def _enrich(self, row: dict[str, Any]) -> dict[str, Any]:
+        kode = str(row.get("program_studi_kode") or "")
+        tahun_id = str(row.get("tahun_ajaran_id") or "")
+        enriched = dict(row)
+        if kode in self.program_studi:
+            enriched["program_studi"] = {"nama": self.program_studi[kode]}
+        if tahun_id in self.tahun_ajaran:
+            enriched["tahun_ajaran"] = {"tahun": self.tahun_ajaran[tahun_id]}
+        return enriched
+
+    def list_all(
+        self,
+        search: str | None = None,
+        program_studi_kode: str | None = None,
+        tahun_ajaran_id: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        rows = self.rows
+        if search and search.strip():
+            term = search.strip().lower()
+            rows = [row for row in rows if term in str(row.get("nama") or "").lower()]
+        if program_studi_kode and program_studi_kode.strip():
+            target = program_studi_kode.strip().upper()
+            rows = [row for row in rows if row.get("program_studi_kode") == target]
+        if tahun_ajaran_id and tahun_ajaran_id.strip():
+            target = tahun_ajaran_id.strip()
+            rows = [row for row in rows if str(row.get("tahun_ajaran_id")) == target]
+        if status and status.strip():
+            target = status.strip().lower()
+            rows = [row for row in rows if row.get("status") == target]
+        return [self._enrich(row) for row in rows]
+
+    def get_by_id(self, kelas_id: str) -> dict[str, Any] | None:
+        row = next((row for row in self.rows if str(row.get("id")) == kelas_id), None)
+        return self._enrich(row) if row else None
+
+    def get_by_nama_dan_tahun(self, nama: str, tahun_ajaran_id: str) -> dict[str, Any] | None:
+        row = next(
+            (
+                row
+                for row in self.rows
+                if row.get("nama") == nama
+                and str(row.get("tahun_ajaran_id")) == tahun_ajaran_id
+            ),
+            None,
+        )
+        return self._enrich(row) if row else None
+
+    def create(self, fields: dict[str, Any]) -> dict[str, Any]:
+        row = {"id": str(uuid4()), "status": "aktif", **fields}
+        self.rows.append(row)
+        return self._enrich(row)
+
+    def update(self, kelas_id: str, fields: dict[str, Any]) -> dict[str, Any] | None:
+        row = next((row for row in self.rows if str(row.get("id")) == kelas_id), None)
+        if row is None:
+            return None
+        row.update(fields)
+        return self._enrich(row)
+
+    def has_references(self, kelas_id: str) -> bool:
+        return self.referenced
+
+    def delete(self, kelas_id: str) -> None:
+        self.rows = [row for row in self.rows if str(row.get("id")) != kelas_id]
+
+
+class FakeAuthRepo:
+    """Records Supabase Auth side effects performed while creating lecturers."""
+
+    def __init__(self, fail_create: bool = False) -> None:
+        self.fail_create = fail_create
+        self.created: list[dict[str, Any]] = []
+        self.linked: list[tuple[str, str]] = []
+        self.deleted: list[str] = []
+        self.updated_emails: list[tuple[str, str]] = []
+
+    def create_auth_user(
+        self,
+        email: str,
+        password: str,
+        user_metadata: dict[str, Any] | None = None,
+    ) -> str:
+        if self.fail_create:
+            raise ConflictError("Akun autentikasi untuk email/NIM tersebut sudah ada.")
+        auth_user_id = f"auth-{len(self.created) + 1}"
+        self.created.append(
+            {
+                "auth_user_id": auth_user_id,
+                "email": email,
+                "password": password,
+                "user_metadata": user_metadata or {},
+            }
+        )
+        return auth_user_id
+
+    def link_dosen_auth_user(self, auth_user_id: str, nip: str) -> None:
+        self.linked.append((auth_user_id, nip))
+
+    def update_auth_email(self, auth_user_id: str, new_email: str) -> None:
+        self.updated_emails.append((auth_user_id, new_email))
+
+    def delete_auth_user(self, auth_user_id: str) -> None:
+        self.deleted.append(auth_user_id)
 
 
 # ── Fixtures ───────────────────────────────────────────────────────────────

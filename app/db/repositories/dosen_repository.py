@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from app.core.exceptions import BadRequestError, ConflictError, ExternalServiceError
 from app.db.repositories.base import BaseRepository
 
 JADWAL_DOSEN_COLUMNS = (
@@ -16,7 +17,7 @@ SESI_PRESENSI_COLUMNS = (
     "jadwal_kuliah(dosen_nip, kelas_id, kelas(nama), mata_kuliah(nama))"
 )
 
-DOSEN_COLUMNS = "nip, nama, email, no_hp, auth_user_id"
+DOSEN_COLUMNS = "nip, nama, email, no_hp, auth_user_id, created_at, updated_at"
 
 
 class DosenRepository(BaseRepository):
@@ -52,6 +53,61 @@ class DosenRepository(BaseRepository):
             .execute()
         )
         return self.first_or_none(res.data)
+
+    def create(self, fields: dict[str, Any]) -> dict[str, Any]:
+        """Insert a lecturer row and return the persisted record."""
+        try:
+            response = self.client.table("dosen").insert(fields).execute()
+        except Exception as exc:
+            self._raise_write_error(exc, "menyimpan dosen")
+        row = self.first_or_none(response.data)
+        if not row or not row.get("nip"):
+            raise ExternalServiceError("Dosen gagal dimuat setelah dibuat.")
+        return self.get_by_nip(str(row["nip"])) or row
+
+    def update(self, nip: str, fields: dict[str, Any]) -> dict[str, Any] | None:
+        """Update a lecturer row (supports NIP change) and return the fresh record."""
+        try:
+            self.client.table("dosen").update(fields).eq("nip", nip).execute()
+        except Exception as exc:
+            self._raise_write_error(exc, "memperbarui dosen")
+        return self.get_by_nip(str(fields.get("nip", nip)))
+
+    def has_references(self, nip: str) -> bool:
+        """Check whether the lecturer is still referenced by schedules or sessions."""
+        try:
+            for table in ("jadwal_kuliah", "sesi_presensi", "pengajuan_ketidakhadiran"):
+                column = "dosen_nip" if table == "jadwal_kuliah" else "dibuka_oleh" if table == "sesi_presensi" else "diputus_oleh"
+                response = (
+                    self.client.table(table)
+                    .select("id")
+                    .eq(column, nip)
+                    .limit(1)
+                    .execute()
+                )
+                if response.data:
+                    return True
+            return False
+        except Exception as exc:
+            raise ExternalServiceError(f"Gagal memeriksa referensi dosen: {exc}") from exc
+
+    def delete(self, nip: str) -> None:
+        """Delete a lecturer row."""
+        try:
+            self.client.table("dosen").delete().eq("nip", nip).execute()
+        except Exception as exc:
+            self._raise_write_error(exc, "menghapus dosen")
+
+    @staticmethod
+    def _raise_write_error(exc: Exception, action: str) -> None:
+        message = str(exc).lower()
+        if "duplicate" in message or "23505" in message or "unique" in message:
+            raise ConflictError("Dosen dengan NIP atau email tersebut sudah ada.") from exc
+        if "foreign key" in message or "23503" in message:
+            raise ConflictError("Dosen masih digunakan oleh jadwal atau sesi presensi.") from exc
+        if "check" in message or "23514" in message:
+            raise BadRequestError("Data dosen melanggar constraint database.") from exc
+        raise ExternalServiceError(f"Gagal {action}: {exc}") from exc
 
     def list_active_jadwal(self, dosen_nip: str) -> list[dict[str, Any]]:
         """List active-academic-year course schedules taught by the lecturer."""

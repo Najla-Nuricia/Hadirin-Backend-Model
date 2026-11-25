@@ -3,7 +3,12 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.deps import get_admin_options_service, get_db_client
+from app.api.deps import (
+    get_admin_master_data_service,
+    get_admin_options_service,
+    get_db_client,
+)
+from app.services.admin_master_data_service import AdminMasterDataService
 from app.services.admin_options_service import AdminOptionsService
 
 from .conftest import FakeListRepo, FakeSupabaseClient
@@ -33,6 +38,27 @@ def options_api(client: TestClient, override) -> TestClient:
         ),
     )
     override(get_admin_options_service, lambda: service)
+
+    master_service = AdminMasterDataService(
+        tahun_ajaran_repo=FakeListRepo([{"id": "ta-1", "tahun": "2026/2027"}]),
+        mata_kuliah_repo=FakeListRepo([]),
+        dosen_repo=FakeListRepo(
+            [
+                {
+                    "nip": "198501012010121001",
+                    "nama": "Budi Santoso",
+                    "email": "budi@polinema.ac.id",
+                },
+                {
+                    "nip": "999999999001",
+                    "nama": "Dosen Testing",
+                    "email": "dosentesting@hadirin.test",
+                },
+            ]
+        ),
+        ruangan_repo=FakeListRepo([{"kode": "J301", "nama": "Ruang J301"}]),
+    )
+    override(get_admin_master_data_service, lambda: master_service)
 
     override(
         get_db_client,
