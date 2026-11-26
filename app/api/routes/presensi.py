@@ -14,6 +14,8 @@ from app.schemas.presensi import (
     GpsAttendanceRequest,
     PresensiHistoryResponse,
     QrAttendanceRequest,
+    ValidateRoomQrRequest,
+    ValidateRoomQrResponse,
 )
 from app.services import PresensiService
 from app.services.face_recognition.face_service import FaceService
@@ -63,6 +65,16 @@ def record_qr_attendance(
 ) -> AttendanceRecordResponse:
     """Validate an open QR session token + campus GPS geofence and record attendance."""
     return presensi_service.submit_qr_attendance(str(current_student["nim"]), payload)
+
+
+@router.post("/room-qr/validate", response_model=ValidateRoomQrResponse)
+def validate_room_qr(
+    payload: ValidateRoomQrRequest,
+    current_student: dict[str, Any] = Depends(get_current_student),
+    presensi_service: PresensiService = Depends(get_presensi_service),
+) -> ValidateRoomQrResponse:
+    """Validate static door QR scanned before opening live camera face check-in."""
+    return presensi_service.validate_room_qr(str(current_student["nim"]), payload)
 
 
 @router.post("/face", response_model=AttendanceRecordResponse)
