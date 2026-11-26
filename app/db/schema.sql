@@ -176,23 +176,28 @@ CREATE INDEX idx_jadwal_dosen_hari   ON jadwal_kuliah (dosen_nip, hari);
 CREATE INDEX idx_jadwal_ruangan_hari ON jadwal_kuliah (ruangan_kode, hari);
 
 -- ─────────────────────────────────────────────────────────────
--- 11. SESI PRESENSI (dibuka dosen per pertemuan)
+-- 11. SESI PRESENSI (satu sesi persisten per jadwal, otomatis)
 -- ─────────────────────────────────────────────────────────────
 CREATE TABLE sesi_presensi (
     id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    jadwal_id      UUID        NOT NULL REFERENCES jadwal_kuliah(id) ON DELETE CASCADE,
-    tanggal        DATE        NOT NULL,
-    qr_token       TEXT        UNIQUE,
-    qr_expires_at  TIMESTAMPTZ,
-    is_open        BOOLEAN     NOT NULL DEFAULT FALSE,
-    dibuka_oleh    VARCHAR(30) REFERENCES dosen(nip),
+    jadwal_id      UUID        NOT NULL UNIQUE REFERENCES jadwal_kuliah(id) ON DELETE CASCADE,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (jadwal_id, tanggal)
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_sesi_presensi_jadwal  ON sesi_presensi (jadwal_id);
-CREATE INDEX idx_sesi_presensi_tanggal ON sesi_presensi (tanggal);
+CREATE FUNCTION auto_create_sesi_presensi()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = public, pg_temp AS $$
+BEGIN
+    INSERT INTO sesi_presensi (jadwal_id) VALUES (NEW.id)
+    ON CONFLICT (jadwal_id) DO NOTHING;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_auto_create_sesi_presensi
+AFTER INSERT ON jadwal_kuliah
+FOR EACH ROW EXECUTE FUNCTION auto_create_sesi_presensi();
 
 -- ─────────────────────────────────────────────────────────────
 -- 12. KEHADIRAN
@@ -202,15 +207,17 @@ CREATE TABLE kehadiran (
     sesi_presensi_id UUID             NOT NULL REFERENCES sesi_presensi(id) ON DELETE CASCADE,
     nim              VARCHAR(20)      NOT NULL REFERENCES mahasiswa(nim)    ON DELETE CASCADE,
     status           status_kehadiran NOT NULL DEFAULT 'alfa',
+    tanggal          DATE             NOT NULL,
     jam_masuk        TIME,
     catatan          TEXT,
     created_at       TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
     updated_at       TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
-    UNIQUE (sesi_presensi_id, nim)
+    UNIQUE (sesi_presensi_id, nim, tanggal)
 );
 
-CREATE INDEX idx_kehadiran_nim    ON kehadiran (nim);
-CREATE INDEX idx_kehadiran_sesi   ON kehadiran (sesi_presensi_id);
+CREATE INDEX idx_kehadiran_nim         ON kehadiran (nim);
+CREATE INDEX idx_kehadiran_sesi        ON kehadiran (sesi_presensi_id);
+CREATE INDEX idx_kehadiran_sesi_tanggal ON kehadiran (sesi_presensi_id, tanggal);
 CREATE INDEX idx_kehadiran_status ON kehadiran (status);
 
 -- ─────────────────────────────────────────────────────────────
@@ -334,7 +341,7 @@ JOIN sesi_kuliah   ss ON ss.nomor = j.sesi_selesai;
 CREATE OR REPLACE VIEW v_rekap_kehadiran WITH (security_invoker = true) AS
 SELECT
     k.id                        AS kehadiran_id,
-    sp.tanggal,
+    k.tanggal,
     sp.id                       AS sesi_presensi_id,
     j.id                        AS jadwal_id,
     mk.nama                     AS matkul_nama,

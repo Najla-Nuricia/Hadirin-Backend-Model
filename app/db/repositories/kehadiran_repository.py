@@ -52,101 +52,77 @@ class KehadiranRepository(BaseRepository):
         res = self.client.table("sesi_presensi").select("*").eq("id", sesi_id).limit(1).execute()
         return self.first_or_none(res.data)
 
-    def get_sesi_by_qr_token(self, qr_token: str) -> dict[str, Any] | None:
-        """Fetch an attendance session matching an active QR token."""
-        res = (
-            self.client.table("sesi_presensi")
-            .select("*")
-            .eq("qr_token", qr_token.strip())
-            .limit(1)
-            .execute()
-        )
-        return self.first_or_none(res.data)
-
-    def get_sesi_by_jadwal_and_date(self, jadwal_id: str, tanggal_iso: str) -> dict[str, Any] | None:
-        """Fetch an attendance session for a schedule on a specific date."""
+    def get_sesi_by_jadwal_id(self, jadwal_id: str) -> dict[str, Any] | None:
+        """Fetch the single persistent session belonging to a schedule."""
         res = (
             self.client.table("sesi_presensi")
             .select("*")
             .eq("jadwal_id", jadwal_id)
-            .eq("tanggal", tanggal_iso)
             .limit(1)
             .execute()
         )
         return self.first_or_none(res.data)
 
-    def list_open_sesi_by_jadwal_ids(
-        self,
-        jadwal_ids: list[str],
-        tanggal_iso: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """List currently open attendance sessions belonging to a student's schedules."""
+    def list_sesi_by_jadwal_ids(self, jadwal_ids: list[str]) -> list[dict[str, Any]]:
+        """List persistent sessions for the given schedules."""
         if not jadwal_ids:
             return []
-        query = (
+        res = (
             self.client.table("sesi_presensi")
             .select("*")
             .in_("jadwal_id", jadwal_ids)
-            .eq("is_open", True)
+            .execute()
         )
-        if tanggal_iso:
-            query = query.eq("tanggal", tanggal_iso)
-        res = query.order("created_at", desc=True).execute()
         return res.data or []
-
-    def create_sesi_presensi(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Insert a new attendance session row."""
-        try:
-            res = self.client.table("sesi_presensi").insert(payload).execute()
-            row = self.first_or_none(res.data)
-            if not row:
-                raise ExternalServiceError("Gagal membuat sesi presensi.")
-            return row
-        except ExternalServiceError:
-            raise
-        except Exception as exc:
-            raise ExternalServiceError(f"Gagal menyimpan sesi presensi: {exc}") from exc
-
-    def get_or_create_sesi_presensi(
-        self,
-        jadwal_id: str,
-        tanggal_iso: str,
-        defaults: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        """Return existing `(jadwal_id, tanggal)` session or create a new one."""
-        existing = self.get_sesi_by_jadwal_and_date(jadwal_id, tanggal_iso)
-        if existing:
-            return existing
-        payload = {"jadwal_id": jadwal_id, "tanggal": tanggal_iso, "is_open": False}
-        if defaults:
-            payload.update(defaults)
-        return self.create_sesi_presensi(payload)
 
     def delete_sesi_presensi(self, sesi_id: str) -> bool:
         """Delete an attendance session by UUID."""
         res = self.client.table("sesi_presensi").delete().eq("id", sesi_id).execute()
         return bool(res.data)
 
-    def get_kehadiran_by_sesi_and_nim(self, sesi_presensi_id: str, nim: str) -> dict[str, Any] | None:
-        """Fetch an attendance row for a `(sesi_presensi_id, nim)` pair."""
+    def get_kehadiran_by_sesi_nim_tanggal(
+        self,
+        sesi_presensi_id: str,
+        nim: str,
+        tanggal_iso: str,
+    ) -> dict[str, Any] | None:
+        """Fetch an attendance row for `(sesi, nim, tanggal)`."""
         res = (
             self.client.table("kehadiran")
             .select("*")
             .eq("sesi_presensi_id", sesi_presensi_id)
             .eq("nim", nim)
+            .eq("tanggal", tanggal_iso)
             .limit(1)
             .execute()
         )
         return self.first_or_none(res.data)
 
+    def list_kehadiran_for_sesi(
+        self,
+        sesi_presensi_id: str,
+        tanggal_iso: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List attendance rows for a persistent session, optionally on one date."""
+        query = (
+            self.client.table("kehadiran")
+            .select("*")
+            .eq("sesi_presensi_id", sesi_presensi_id)
+        )
+        if tanggal_iso:
+            query = query.eq("tanggal", tanggal_iso)
+        res = query.execute()
+        return res.data or []
+
     def upsert_kehadiran(
         self,
         sesi_presensi_id: str,
         nim: str,
+        tanggal_iso: str,
         fields: dict[str, Any],
     ) -> dict[str, Any]:
-        """Insert or update a student's attendance record for a session."""
-        existing = self.get_kehadiran_by_sesi_and_nim(sesi_presensi_id, nim)
+        """Insert or update attendance for `(sesi, nim, tanggal)`."""
+        existing = self.get_kehadiran_by_sesi_nim_tanggal(sesi_presensi_id, nim, tanggal_iso)
         if existing:
             res = (
                 self.client.table("kehadiran")
@@ -156,7 +132,12 @@ class KehadiranRepository(BaseRepository):
             )
             return self.first_or_none(res.data) or {**existing, **fields}
 
-        payload = {"sesi_presensi_id": sesi_presensi_id, "nim": nim, **fields}
+        payload = {
+            "sesi_presensi_id": sesi_presensi_id,
+            "nim": nim,
+            "tanggal": tanggal_iso,
+            **fields,
+        }
         res = self.client.table("kehadiran").insert(payload).execute()
         row = self.first_or_none(res.data)
         if not row:

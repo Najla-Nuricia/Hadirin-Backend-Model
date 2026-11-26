@@ -1,12 +1,10 @@
-"""Lecturer service: authentication, dashboard analytics, session roster, and QR control."""
+"""Lecturer service: authentication, dashboard analytics, and session roster."""
 
-from datetime import date, datetime, timedelta
-import secrets
+from datetime import date
 from typing import Any
 
 from app.core.config import Settings, get_settings
 from app.core.exceptions import (
-    ConflictError,
     ForbiddenError,
     NotFoundError,
     UnauthorizedError,
@@ -26,7 +24,6 @@ from app.schemas.dosen import (
     DosenProfileResponse,
     DosenStudentAttendanceItem,
     DosenStudentDocument,
-    SesiPresensiQrResponse,
 )
 from app.services import common
 
@@ -243,15 +240,7 @@ class DosenService:
                     hari_ini=(norm["hari"] == hari_ini),
                     jumlah_mahasiswa=len(student_nims),
                     jumlah_sesi=len(sessions),
-                    sesi_terakhir=max((str(s["tanggal"]) for s in sessions), default=None),
-                    sesi_aktif_id=next(
-                        (
-                            str(s["id"])
-                            for s in sessions
-                            if s.get("is_open") and str(s.get("tanggal")) == today
-                        ),
-                        None,
-                    ),
+                    sesi_aktif_id=str(sessions[0]["id"]) if sessions else None,
                     ringkasan_kehadiran=_build_summary(counts),
                 )
             )
@@ -304,16 +293,23 @@ class DosenService:
     ) -> DosenKehadiranListResponse:
         """Fetch class roster and session attendance statuses for a lecturer schedule."""
         jadwal = _normalize_jadwal_row(self._get_owned_jadwal_or_raise(jadwal_id, nip))
-        sesi = self.dosen_repo.get_latest_sesi_for_jadwal(jadwal_id, tanggal_iso=tanggal_iso)
+        sesi = self.dosen_repo.get_sesi_by_jadwal_id(jadwal_id)
         if not sesi:
-            raise NotFoundError("Belum ada sesi presensi untuk jadwal dan tanggal ini.")
+            raise NotFoundError("Belum ada sesi presensi untuk jadwal ini.")
 
         sesi_id = str(sesi["id"])
         mahasiswa_rows = self.dosen_repo.list_students_by_kelas_ids(
             [jadwal["kelas_id"]],
             columns="nim, nama_lengkap",
         )
-        kehadiran_rows = self.dosen_repo.list_kehadiran_for_sesi(sesi_id)
+        all_kehadiran = self.dosen_repo.list_kehadiran_for_sesi(sesi_id)
+        effective_tanggal = tanggal_iso or max(
+            (str(row["tanggal"]) for row in all_kehadiran if row.get("tanggal")),
+            default=common.now_wib().date().isoformat(),
+        )
+        kehadiran_rows = [
+            row for row in all_kehadiran if str(row.get("tanggal")) == effective_tanggal
+        ]
         kehadiran_by_nim = {str(row["nim"]): row for row in kehadiran_rows}
 
         students: list[DosenStudentAttendanceItem] = []
@@ -355,63 +351,9 @@ class DosenService:
             sesi_presensi_id=sesi_id,
             courseName=jadwal["course_name"],
             className=jadwal["kelas"],
-            date=str(sesi["tanggal"]),
-            is_open=bool(sesi["is_open"]),
+            date=effective_tanggal,
             summary=_build_summary(counts),
             students=students,
-        )
-
-    def open_sesi_presensi(self, jadwal_id: str, nip: str) -> SesiPresensiQrResponse:
-        """Open today's attendance session for a schedule and issue a dynamic QR token."""
-        jadwal = _normalize_jadwal_row(self._get_owned_jadwal_or_raise(jadwal_id, nip))
-        now = common.now_wib()
-        row = self.dosen_repo.upsert_open_sesi(
-            {
-                "jadwal_id": jadwal_id,
-                "tanggal": now.date().isoformat(),
-                "is_open": True,
-                "dibuka_oleh": nip,
-                **self._new_qr_fields(now),
-            }
-        )
-        if not row:
-            raise NotFoundError("Gagal membuka sesi presensi.")
-        return self._build_sesi_response(
-            row,
-            course_name=jadwal["course_name"],
-            class_name=jadwal["kelas"],
-        )
-
-    def refresh_qr_sesensi(self, sesi_id: str, nip: str) -> SesiPresensiQrResponse:
-        """Rotate dynamic QR token on an active today session, invalidating the prior code."""
-        sesi = self._get_owned_sesi_or_raise(sesi_id, nip)
-        now = common.now_wib()
-        closed_detail = "Sesi presensi sudah ditutup. Buka sesi baru untuk membuat QR."
-        if not sesi.get("is_open") or str(sesi.get("tanggal")) != now.date().isoformat():
-            raise ConflictError(closed_detail)
-
-        updated = self.dosen_repo.update_sesi_qr(sesi_id, self._new_qr_fields(now))
-        if not updated:
-            raise ConflictError(closed_detail)
-
-        jadwal = sesi.get("jadwal_kuliah") or {}
-        return self._build_sesi_response(
-            updated,
-            course_name=(jadwal.get("mata_kuliah") or {}).get("nama"),
-            class_name=(jadwal.get("kelas") or {}).get("nama"),
-        )
-
-    def close_sesi_presensi(self, sesi_id: str, nip: str) -> SesiPresensiQrResponse:
-        """Close an active attendance session and clear its dynamic QR token."""
-        sesi = self._get_owned_sesi_or_raise(sesi_id, nip)
-        closed = self.dosen_repo.close_sesi(sesi_id)
-        if not closed:
-            raise NotFoundError("Sesi presensi tidak ditemukan.")
-        jadwal = sesi.get("jadwal_kuliah") or {}
-        return self._build_sesi_response(
-            closed,
-            course_name=(jadwal.get("mata_kuliah") or {}).get("nama"),
-            class_name=(jadwal.get("kelas") or {}).get("nama"),
         )
 
     def _get_owned_jadwal_or_raise(self, jadwal_id: str, nip: str) -> dict[str, Any]:
@@ -421,39 +363,3 @@ class DosenService:
         if str(jadwal.get("dosen_nip")) != nip:
             raise ForbiddenError("Jadwal ini bukan jadwal Anda.")
         return jadwal
-
-    def _get_owned_sesi_or_raise(self, sesi_id: str, nip: str) -> dict[str, Any]:
-        sesi = self.dosen_repo.get_sesi_with_jadwal(sesi_id)
-        if not sesi:
-            raise NotFoundError("Sesi presensi tidak ditemukan.")
-        owner_nip = (sesi.get("jadwal_kuliah") or {}).get("dosen_nip")
-        if str(owner_nip) != nip:
-            raise ForbiddenError("Sesi presensi ini bukan milik Anda.")
-        return sesi
-
-    def _new_qr_fields(self, now: datetime) -> dict[str, str]:
-        return {
-            "qr_token": secrets.token_urlsafe(24),
-            "qr_expires_at": (
-                now + timedelta(seconds=self.settings.qr_token_ttl_seconds)
-            ).isoformat(),
-        }
-
-    def _build_sesi_response(
-        self,
-        sesi: dict[str, Any],
-        *,
-        course_name: str | None,
-        class_name: str | None,
-    ) -> SesiPresensiQrResponse:
-        return SesiPresensiQrResponse(
-            sesi_presensi_id=str(sesi["id"]),
-            jadwal_id=str(sesi["jadwal_id"]),
-            tanggal=str(sesi["tanggal"]),
-            course_name=course_name,
-            kelas=class_name,
-            is_open=bool(sesi["is_open"]),
-            qr_code=sesi.get("qr_token"),
-            qr_expires_at=sesi.get("qr_expires_at"),
-            qr_ttl_seconds=self.settings.qr_token_ttl_seconds,
-        )

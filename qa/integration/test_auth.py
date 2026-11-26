@@ -50,7 +50,9 @@ def test_login_nonexistent_user_rejected(client: TestClient) -> None:
 
 
 def test_register_valid_user_and_cleanup(client: TestClient, settings: Settings) -> None:
-    new_nim = f"2499{uuid4().hex[:6]}"
+    new_nim = f"2499{uuid4().int % 1_000_000:06d}"
+    supabase = get_supabase_client(settings)
+    supabase.table("whitelist_nim").upsert({"nim": new_nim}).execute()
     try:
         response = client.post(
             "/auth/register",
@@ -79,7 +81,6 @@ def test_register_valid_user_and_cleanup(client: TestClient, settings: Settings)
         )
         assert bad_login.status_code == 401
     finally:
-        supabase = get_supabase_client(settings)
         mhs_repo = MahasiswaRepository(client=supabase, settings=settings)
         auth_repo = AuthRepository(client=supabase, settings=settings)
         row = mhs_repo.get_by_nim(new_nim)
@@ -90,6 +91,7 @@ def test_register_valid_user_and_cleanup(client: TestClient, settings: Settings)
                     auth_repo.delete_auth_user(str(row["auth_user_id"]))
                 except Exception:
                     pass
+        supabase.table("whitelist_nim").delete().eq("nim", new_nim).execute()
 
 
 def test_register_duplicate_nim_conflict(client: TestClient) -> None:

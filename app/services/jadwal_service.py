@@ -53,8 +53,7 @@ class JadwalService:
 
         now = now_wib()
         today_hari = WEEKDAY_TO_HARI.get(now.weekday(), "")
-        today_iso = now.date().isoformat()
-        open_map = self._map_open_sessions(rows, today_iso)
+        open_map = self._map_open_sessions(rows)
 
         items = [self._to_jadwal_item(row, today_hari, open_map) for row in rows]
         items.sort(key=lambda item: (HARI_ORDER.get(item.hari.lower(), 99), item.jam_mulai))
@@ -74,14 +73,7 @@ class JadwalService:
         today_idx = now.weekday()
         current_hhmm = now.strftime("%H:%M")
 
-        # 1. Prioritize any session currently opened by the lecturer today.
-        for item in items:
-            if item.is_session_open:
-                return PengingatResponse(
-                    data=self._to_pengingat_item(item, is_today=True, status_label="Sesi Presensi Dibuka"),
-                )
-
-        # 2. Next, check today's remaining or ongoing schedules in chronological order.
+        # 1. Check today's remaining or ongoing schedules in chronological order.
         today_hari = WEEKDAY_TO_HARI.get(today_idx, "")
         today_items = sorted(
             [item for item in items if item.hari.lower() == today_hari],
@@ -97,7 +89,7 @@ class JadwalService:
                     data=self._to_pengingat_item(item, is_today=True, status_label="Jadwal Hari Ini"),
                 )
 
-        # 3. Otherwise choose the nearest upcoming class across upcoming days.
+        # 2. Otherwise choose the nearest upcoming class across upcoming days.
         def _days_until(item: JadwalItem) -> tuple[int, str]:
             day_idx = HARI_ORDER.get(item.hari.lower(), 0)
             delta = (day_idx - today_idx) % 7
@@ -119,13 +111,10 @@ class JadwalService:
             kelas = kelas[0] if kelas else {}
         return kelas.get("nama")
 
-    def _map_open_sessions(self, rows: list[dict[str, Any]], today_iso: str) -> dict[str, dict[str, Any]]:
+    def _map_open_sessions(self, rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
         jadwal_ids = [row["id"] for row in rows if row.get("id")]
-        open_sessions = self.kehadiran_repo.list_open_sesi_by_jadwal_ids(
-            jadwal_ids=jadwal_ids,
-            tanggal_iso=today_iso,
-        )
-        return {sesi["jadwal_id"]: sesi for sesi in open_sessions if sesi.get("jadwal_id")}
+        sessions = self.kehadiran_repo.list_sesi_by_jadwal_ids(jadwal_ids)
+        return {sesi["jadwal_id"]: sesi for sesi in sessions if sesi.get("jadwal_id")}
 
     @staticmethod
     def _to_jadwal_item(
@@ -141,7 +130,6 @@ class JadwalService:
         room = row.get("ruangan_nama") or row.get("ruangan_kode")
         lecturer = row.get("dosen_nama")
         open_sesi = open_map.get(row["id"])
-        is_open = open_sesi is not None
         return JadwalItem(
             id=str(row["id"]),
             hari=hari,
@@ -170,8 +158,7 @@ class JadwalService:
             time=format_time_range(row.get("jam_mulai"), row.get("jam_selesai")),
             sesi_mulai=row.get("sesi_mulai"),
             sesi_selesai=row.get("sesi_selesai"),
-            has_alarm=(hari == today_hari) or is_open,
-            is_session_open=is_open,
+            has_alarm=hari == today_hari,
             active_sesi_id=str(open_sesi["id"]) if open_sesi else None,
         )
 
@@ -198,7 +185,6 @@ class JadwalService:
             dosen_nama=jadwal.dosen_nama,
             kelas_nama=jadwal.kelas_nama,
             is_today=is_today,
-            is_session_open=jadwal.is_session_open,
             sesi_presensi_id=jadwal.active_sesi_id,
             status_label=status_label,
             message=f"{status_label} — {jadwal.hari.title()} {jadwal.jam_mulai}",

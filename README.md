@@ -233,7 +233,7 @@ curl http://127.0.0.1:8000/health
 | Kelas | `/kelas` | `GET /kelas` (filter `tahun_ajaran`, `program_studi_kode`) |
 | Wajah | `/mahasiswa/wajah` | `POST /mahasiswa/wajah`, `POST /mahasiswa/wajah/verify` |
 | Pengajuan | `/mahasiswa/pengajuan` | `POST /mahasiswa/pengajuan` |
-| Presensi | `/attendance` | `POST /attendance/qr`, `/gps`, `/face` |
+| Presensi | `/attendance` | `GET /sesi-aktif`, `POST /room-qr/validate`, `/gps`, `/face` |
 | Health | `/health` | probe DB + bobot ML |
 
 Autentikasi memakai header `Authorization: Bearer <token>`.
@@ -275,7 +275,7 @@ pytest -k presensi -v
 | `/health` → `ml_weights_ready: false` | File bobot tidak ada di `ml/models/weights/` |
 | Login dosen/admin 401 | Akun Supabase Auth belum ada/terhubung; jalankan `python -m scripts.seed_auth_all_roles` |
 | Absensi GPS ditolak | Koordinat di luar geofence / akurasi > `GEOFENCE_MAX_ACCURACY_METERS` |
-| QR kedaluwarsa | Token berlaku `QR_TOKEN_TTL_SECONDS` (default 30 detik) |
+| QR ruangan ditolak | Pastikan token `HADIRIN:ROOM:<KODE>` sesuai ruangan jadwal dan waktu check-in (±1 jam dari jadwal) |
 | Import `torch` lambat | Normal pada first load; model dimuat lazy |
 | Registrasi wajah error `malformed vector` | Migration pgvector belum dijalankan di Supabase |
 

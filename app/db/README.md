@@ -147,7 +147,7 @@ Set custom claims melalui **Supabase Auth Hook** atau function PostgreSQL saat u
 | View                  | Kegunaan                                              |
 |-----------------------|-------------------------------------------------------|
 | `v_jadwal_lengkap`    | Jadwal kuliah lengkap dengan nama dosen, kelas, dll   |
-| `v_rekap_kehadiran`   | Rekap kehadiran per mahasiswa per sesi presensi       |
+| `v_rekap_kehadiran`   | Rekap kehadiran per mahasiswa; tanggal berasal dari `kehadiran.tanggal` |
 
 ---
 

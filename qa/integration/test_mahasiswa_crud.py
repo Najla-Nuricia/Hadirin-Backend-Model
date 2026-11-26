@@ -59,7 +59,9 @@ def test_mahasiswa_crud_lifecycle(
     seeded_auth_headers: dict[str, str],
     settings: Settings,
 ) -> None:
-    test_nim = f"2498{uuid4().hex[:6]}"
+    test_nim = f"2498{uuid4().int % 1_000_000:06d}"
+    supabase = get_supabase_client(settings)
+    supabase.table("whitelist_nim").upsert({"nim": test_nim}).execute()
     try:
         create_resp = client.post(
             "/mahasiswa",
@@ -97,7 +99,8 @@ def test_mahasiswa_crud_lifecycle(
         after_del = client.get(f"/mahasiswa/{test_nim}", headers=seeded_auth_headers)
         assert after_del.status_code == 404
     finally:
-        repo = MahasiswaRepository(client=get_supabase_client(settings), settings=settings)
+        supabase.table("whitelist_nim").delete().eq("nim", test_nim).execute()
+        repo = MahasiswaRepository(client=supabase, settings=settings)
         if repo.get_by_nim(test_nim):
             repo.delete_by_nim(test_nim)
 
