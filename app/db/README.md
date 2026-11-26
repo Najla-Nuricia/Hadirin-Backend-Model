@@ -162,3 +162,4 @@ menggunakan tipe `vector(512)` dari ekstensi pgvector; `storage_path` dan
 `face_photo_path` sudah dihapus. Untuk database lama, jalankan
 `app/db/migration_20261120000001_no_photos_pgvector.sql` — migrasinya
 membuat backup path ke `hadirin_legacy_photo_paths` sebelum menghapus kolom.
+Tabel backup itu sudah dihapus lewat `supabase/migrations/20261121000000_drop_legacy_photo_paths.sql`.

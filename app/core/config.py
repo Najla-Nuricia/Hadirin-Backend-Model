@@ -72,6 +72,7 @@ class Settings(BaseSettings):
 
     # Testing / Development
     testing_bypass_session: bool = Field(default=False, description="Jika True, bypass is_open dan QR expiry untuk testing absensi.")
+    testing_bypass_location: bool = Field(default=False, description="Jika True, bypass geofence dan akurasi GPS untuk testing absensi.")
 
     # HTTP / CORS
     cors_allow_origins: str = "*"

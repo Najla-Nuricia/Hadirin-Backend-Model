@@ -122,7 +122,9 @@ Setelah langkah 4, aktifkan hook di dashboard:
 `supabase db push`). Migrasi ini mengaktifkan pgvector, mengubah
 `foto_wajah.embedding` dari JSONB ke `vector(512)` tanpa membuang embedding
 yang valid, membackup path foto lama ke `hadirin_legacy_photo_paths`, lalu
-menghapus kolom `storage_path` dan `face_photo_path`.
+menghapus kolom `storage_path` dan `face_photo_path`. Tabel backup tersebut
+sudah dihapus via migrasi `20261121000000_drop_legacy_photo_paths.sql`
+(setelah verifikasi; manifest path tersimpan di `/tmp/opencode/`).
 
 Detail tabel, RLS, dan bucket storage: [`app/db/README.md`](app/db/README.md).
 

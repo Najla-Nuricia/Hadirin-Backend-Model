@@ -417,17 +417,19 @@ class PresensiService:
         longitude: float,
         accuracy: float | None = None,
     ) -> float:
-        if accuracy is not None and accuracy > self.settings.geofence_max_accuracy_meters:
-            raise UnprocessableError(
-                f"Akurasi GPS terlalu rendah (±{accuracy:.0f} m). "
-                "Aktifkan lokasi akurasi tinggi lalu coba lagi."
-            )
         distance = haversine_meters(
             latitude,
             longitude,
             self.settings.campus_latitude,
             self.settings.campus_longitude,
         )
+        if self.settings.testing_bypass_location:
+            return distance
+        if accuracy is not None and accuracy > self.settings.geofence_max_accuracy_meters:
+            raise UnprocessableError(
+                f"Akurasi GPS terlalu rendah (±{accuracy:.0f} m). "
+                "Aktifkan lokasi akurasi tinggi lalu coba lagi."
+            )
         if distance > self.settings.max_gps_distance_meters:
             raise ForbiddenError(
                 f"Lokasi di luar area {self.settings.geofence_name}: {distance:.0f} m dari titik presensi, "
