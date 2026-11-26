@@ -51,14 +51,11 @@ class ActiveSessionItem(BaseModel):
 
     sesi_presensi_id: str
     jadwal_id: str
-    tanggal: str
     matkul_nama: str
     kelas_nama: str
     ruangan_nama: str | None = None
     jam_mulai: str | None = None
     jam_selesai: str | None = None
-    is_open: bool = True
-    qr_expires_at: str | None = None
 
 
 class ActiveSessionListResponse(BaseModel):
@@ -75,23 +72,6 @@ class GpsAttendanceRequest(BaseModel):
     longitude: float = Field(..., ge=-180.0, le=180.0)
     accuracy: float | None = Field(default=None, ge=0.0)
     sesi_presensi_id: str | None = None
-    catatan: str | None = Field(default=None, max_length=255)
-
-
-class QrAttendanceRequest(BaseModel):
-    """Payload to record attendance via dynamic QR token (`qr_token` or `code`) and optional GPS."""
-
-    model_config = ConfigDict(populate_by_name=True)
-
-    qr_token: str = Field(
-        ...,
-        min_length=1,
-        max_length=128,
-        validation_alias=AliasChoices("qr_token", "code"),
-    )
-    latitude: float | None = Field(default=None, ge=-90.0, le=90.0)
-    longitude: float | None = Field(default=None, ge=-180.0, le=180.0)
-    accuracy: float | None = Field(default=None, ge=0.0)
     catatan: str | None = Field(default=None, max_length=255)
 
 
@@ -132,7 +112,6 @@ class FaceAttendanceRequest(BaseModel):
 
     image_base64: str = Field(..., min_length=16)
     sesi_presensi_id: str | None = None
-    qr_token: str | None = None
     latitude: float | None = Field(default=None, ge=-90.0, le=90.0)
     longitude: float | None = Field(default=None, ge=-180.0, le=180.0)
     accuracy: float | None = Field(default=None, ge=0.0)

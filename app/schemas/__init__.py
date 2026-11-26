@@ -50,7 +50,6 @@ from app.schemas.presensi import (
     PresensiHistoryItem,
     PresensiHistoryResponse,
     PresensiSummaryResponse,
-    QrAttendanceRequest,
 )
 from app.schemas.wajah import (
     FaceBase64Payload,
@@ -102,7 +101,6 @@ __all__ = [
     "PresensiHistoryItem",
     "PresensiHistoryResponse",
     "PresensiSummaryResponse",
-    "QrAttendanceRequest",
     "RegisterRequest",
     "RegisterResponse",
     "TokenResponse",

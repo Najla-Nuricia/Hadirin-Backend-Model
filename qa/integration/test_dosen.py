@@ -102,8 +102,7 @@ def test_dashboard_lists_classes_and_attendance_summary(
     assert web_lanjut["hari"] == "senin"
     assert web_lanjut["start_time"] == "07:50"
     assert web_lanjut["end_time"] == "09:30"
-    assert web_lanjut["jumlah_sesi"] >= 1
-    assert web_lanjut["sesi_terakhir"] >= TANGGAL_SESI_SEED
+    assert web_lanjut["jumlah_sesi"] == 1
     assert web_lanjut["ringkasan_kehadiran"]["hadir"] >= 7
 
     for item in body["jadwal"]:
@@ -129,29 +128,26 @@ def test_dashboard_only_contains_own_schedules(
     assert JADWAL_DOSEN_LAIN not in {item["jadwal_id"] for item in body["jadwal"]}
 
 
-def test_dashboard_reports_today_and_open_session(
-    client: TestClient, dosen_headers: dict[str, str], open_session
+def test_dashboard_reports_today_and_persistent_session(
+    client: TestClient,
+    dosen_headers: dict[str, str],
+    session_clock: dict,
+    ensure_sesi,
 ) -> None:
-    before = client.get("/dosen/dashboard", headers=dosen_headers).json()
-    sesi = open_session(JADWAL_TI3A)
-    after = client.get("/dosen/dashboard", headers=dosen_headers).json()
+    sesi = ensure_sesi(JADWAL_TI3A)
+    body = client.get("/dosen/dashboard", headers=dosen_headers).json()
 
-    jadwal_before = {item["jadwal_id"]: item for item in before["jadwal"]}
-    jadwal_after = {item["jadwal_id"]: item for item in after["jadwal"]}
-    assert after["tanggal"] == "2099-01-05"
-    assert after["hari"] == "senin"
-    assert jadwal_after[JADWAL_TI3A]["hari_ini"] is True
+    jadwal = {item["jadwal_id"]: item for item in body["jadwal"]}
+    assert body["tanggal"] == "2099-01-05"
+    assert body["hari"] == "senin"
+    assert jadwal[JADWAL_TI3A]["hari_ini"] is True
     assert all(
         item["hari_ini"] is False
-        for item in after["jadwal"]
+        for item in body["jadwal"]
         if item["hari"] != "senin"
     )
-    assert jadwal_before[JADWAL_TI3A]["sesi_aktif_id"] is None
-    assert jadwal_after[JADWAL_TI3A]["sesi_aktif_id"] == sesi["sesi_presensi_id"]
-    assert (
-        jadwal_after[JADWAL_TI3A]["jumlah_sesi"]
-        == jadwal_before[JADWAL_TI3A]["jumlah_sesi"] + 1
-    )
+    assert jadwal[JADWAL_TI3A]["sesi_aktif_id"] == sesi["sesi_presensi_id"]
+    assert jadwal[JADWAL_TI3A]["jumlah_sesi"] == 1
 
 
 def test_attendance_list_shows_status_per_student(
@@ -168,7 +164,6 @@ def test_attendance_list_shows_status_per_student(
     assert body["className"] == "TI-3A"
     assert body["courseName"] == "Pemrograman Web Lanjut"
     assert body["date"] == TANGGAL_SESI_SEED
-    assert body["is_open"] is False
     assert {student["className"] for student in body["students"]} == {"TI-3A"}
 
     students = {student["nim"]: student for student in body["students"]}

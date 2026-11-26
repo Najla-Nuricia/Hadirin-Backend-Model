@@ -6,8 +6,8 @@ from app.core.exceptions import ConflictError, ExternalServiceError
 from app.db.repositories.base import BaseRepository
 
 _PENGAJUAN_SELECT = (
-    "*, kehadiran!inner(id, nim, status, sesi_presensi_id, "
-    "sesi_presensi(id, tanggal, jadwal_id))"
+    "*, kehadiran!inner(id, nim, tanggal, status, sesi_presensi_id, "
+    "sesi_presensi(id, jadwal_id))"
 )
 
 

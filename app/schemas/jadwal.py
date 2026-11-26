@@ -34,7 +34,6 @@ class JadwalItem(BaseModel):
     sesi_mulai: int | None = None
     sesi_selesai: int | None = None
     has_alarm: bool = False
-    is_session_open: bool = False
     active_sesi_id: str | None = None
 
 
@@ -64,7 +63,6 @@ class PengingatItem(BaseModel):
     dosen_nama: str | None = None
     kelas_nama: str
     is_today: bool = False
-    is_session_open: bool = False
     sesi_presensi_id: str | None = None
     status_label: str = "Jadwal Berikutnya"
     message: str | None = None

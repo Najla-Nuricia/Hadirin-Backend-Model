@@ -13,7 +13,6 @@ from app.schemas.dosen import (
     DosenLoginRequest,
     DosenLoginResponse,
     DosenMatkulListResponse,
-    SesiPresensiQrResponse,
 )
 from app.services.dosen_service import DosenService
 
@@ -71,43 +70,4 @@ def get_jadwal_kehadiran(
         jadwal_id=str(jadwal_id),
         nip=str(current_dosen["nip"]),
         tanggal_iso=tanggal.isoformat() if tanggal is not None else None,
-    )
-
-
-@router.post("/dosen/jadwal/{jadwal_id}/sesi-presensi", response_model=SesiPresensiQrResponse)
-def buka_sesi_presensi(
-    jadwal_id: UUID,
-    current_dosen: dict[str, Any] = Depends(get_current_dosen),
-    dosen_service: DosenService = Depends(get_dosen_service),
-) -> SesiPresensiQrResponse:
-    """Open today's attendance session for this schedule and generate a dynamic QR code."""
-    return dosen_service.open_sesi_presensi(
-        jadwal_id=str(jadwal_id),
-        nip=str(current_dosen["nip"]),
-    )
-
-
-@router.post("/dosen/sesi-presensi/{sesi_id}/qr", response_model=SesiPresensiQrResponse)
-def perbarui_qr_sesensi(
-    sesi_id: UUID,
-    current_dosen: dict[str, Any] = Depends(get_current_dosen),
-    dosen_service: DosenService = Depends(get_dosen_service),
-) -> SesiPresensiQrResponse:
-    """Rotate QR token for an active open session, immediately invalidating old codes."""
-    return dosen_service.refresh_qr_sesensi(
-        sesi_id=str(sesi_id),
-        nip=str(current_dosen["nip"]),
-    )
-
-
-@router.post("/dosen/sesi-presensi/{sesi_id}/tutup", response_model=SesiPresensiQrResponse)
-def tutup_sesi_presensi(
-    sesi_id: UUID,
-    current_dosen: dict[str, Any] = Depends(get_current_dosen),
-    dosen_service: DosenService = Depends(get_dosen_service),
-) -> SesiPresensiQrResponse:
-    """Close an attendance session and clear its dynamic QR code."""
-    return dosen_service.close_sesi_presensi(
-        sesi_id=str(sesi_id),
-        nip=str(current_dosen["nip"]),
     )

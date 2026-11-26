@@ -131,12 +131,11 @@ class PengajuanService:
         db_jenis, _, cleaned_alasan = _normalize_jenis_for_db(jenis, alasan)
 
         tanggal_iso = self._parse_date_iso(tanggal)
-        sesi, resolved_jadwal = self._resolve_or_create_sesi(
+        sesi, resolved_jadwal = self._resolve_sesi(
             student=student,
             sesi_presensi_id=sesi_presensi_id,
             jadwal_id=jadwal_id,
             matakuliah=matakuliah,
-            tanggal_iso=tanggal_iso,
         )
 
         uploaded_path: str | None = None
@@ -148,9 +147,10 @@ class PengajuanService:
         final_doc_path = uploaded_path or (dokumen_path.strip() if dokumen_path else None)
 
         created_kehadiran_here = False
-        existing_kehadiran = self.kehadiran_repo.get_kehadiran_by_sesi_and_nim(
+        existing_kehadiran = self.kehadiran_repo.get_kehadiran_by_sesi_nim_tanggal(
             str(sesi["id"]),
             nim,
+            tanggal_iso,
         )
         if existing_kehadiran and self.pengajuan_repo.get_by_kehadiran_id(str(existing_kehadiran["id"])):
             if uploaded_path:
@@ -164,6 +164,7 @@ class PengajuanService:
                 kehadiran_row = self.kehadiran_repo.upsert_kehadiran(
                     sesi_presensi_id=str(sesi["id"]),
                     nim=nim,
+                    tanggal_iso=tanggal_iso,
                     fields={"status": db_jenis},
                 )
                 created_kehadiran_here = True
@@ -226,11 +227,14 @@ class PengajuanService:
             raise NotFoundError("Pengajuan tidak ditemukan.")
 
         if next_db_jenis is not None and existing.get("kehadiran_id"):
-            sesi_id = (existing.get("kehadiran") or {}).get("sesi_presensi_id")
+            kehadiran = existing.get("kehadiran") or {}
+            sesi_id = kehadiran.get("sesi_presensi_id")
+            tanggal = str(kehadiran.get("tanggal") or now_wib().date().isoformat())[:10]
             if sesi_id:
                 self.kehadiran_repo.upsert_kehadiran(
                     sesi_presensi_id=str(sesi_id),
                     nim=nim,
+                    tanggal_iso=tanggal,
                     fields={"status": next_db_jenis},
                 )
 
@@ -261,13 +265,12 @@ class PengajuanService:
 
         return MessageResponse(message="Pengajuan berhasil dihapus.")
 
-    def _resolve_or_create_sesi(
+    def _resolve_sesi(
         self,
         student: dict[str, Any],
         sesi_presensi_id: str | None,
         jadwal_id: str | None,
         matakuliah: str | None,
-        tanggal_iso: str,
     ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         if sesi_presensi_id:
             sesi = self.kehadiran_repo.get_sesi_by_id(sesi_presensi_id)
@@ -314,11 +317,9 @@ class PengajuanService:
                     "Jadwal perkuliahan tidak ditemukan di database untuk pengajuan ini."
                 )
 
-        sesi = self.kehadiran_repo.get_or_create_sesi_presensi(
-            jadwal_id=str(jadwal["id"]),
-            tanggal_iso=tanggal_iso,
-            defaults={"dibuka_oleh": jadwal.get("dosen_nip"), "is_open": False},
-        )
+        sesi = self.kehadiran_repo.get_sesi_by_jadwal_id(str(jadwal["id"]))
+        if not sesi:
+            raise NotFoundError("Sesi presensi untuk jadwal ini tidak ditemukan.")
         return sesi, jadwal
 
     def _to_pengajuan_item(
@@ -355,7 +356,7 @@ class PengajuanService:
             jenis=public_jenis,
             alasan=raw_alasan,
             matakuliah=matakuliah,
-            tanggal=str(sesi["tanggal"]) if sesi.get("tanggal") else None,
+            tanggal=str(kehadiran["tanggal"])[:10] if kehadiran.get("tanggal") else None,
             dokumen_path=doc_path,
             dokumen_url=self.pengajuan_repo.get_document_signed_url(doc_path),
             status_pengajuan=str(row.get("status_pengajuan") or "pending"),

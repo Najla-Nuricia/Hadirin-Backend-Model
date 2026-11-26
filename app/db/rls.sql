@@ -194,8 +194,8 @@ CREATE POLICY jadwal_modify_admin ON jadwal_kuliah
 -- 11. SESI PRESENSI
 --     - Admin & dosen bisa baca semua
 --     - Mahasiswa bisa baca sesi dari jadwal kelasnya
---     - Dosen bisa buat & buka sesi dari jadwalnya sendiri
---     - Admin bisa ubah semua
+--     - Sesi dibuat otomatis oleh trigger saat jadwal dibuat
+--     - Dosen hanya bisa baca; admin bisa ubah semua
 -- ─────────────────────────────────────────────────────────────
 CREATE POLICY sp_select_admin_dosen ON sesi_presensi
     FOR SELECT USING (auth_role() IN ('admin', 'dosen'));
@@ -208,21 +208,6 @@ CREATE POLICY sp_select_mhs ON sesi_presensi
             JOIN mahasiswa m ON m.kelas_id = j.kelas_id
             WHERE m.nim = auth_nim()
         )
-    );
-
-CREATE POLICY sp_insert_dosen ON sesi_presensi
-    FOR INSERT WITH CHECK (
-        auth_role() = 'dosen'
-        AND jadwal_id IN (
-            SELECT id FROM jadwal_kuliah
-            WHERE dosen_nip = auth_nip()
-        )
-    );
-
-CREATE POLICY sp_update_dosen ON sesi_presensi
-    FOR UPDATE USING (
-        auth_role() = 'dosen'
-        AND dibuka_oleh = auth_nip()
     );
 
 CREATE POLICY sp_modify_admin ON sesi_presensi

@@ -13,7 +13,6 @@ from app.schemas.presensi import (
     FaceAttendanceRequest,
     GpsAttendanceRequest,
     PresensiHistoryResponse,
-    QrAttendanceRequest,
     ValidateRoomQrRequest,
     ValidateRoomQrResponse,
 )
@@ -57,16 +56,6 @@ def record_gps_attendance(
     return presensi_service.submit_gps_attendance(str(current_student["nim"]), payload)
 
 
-@router.post("/qr", response_model=AttendanceRecordResponse)
-def record_qr_attendance(
-    payload: QrAttendanceRequest,
-    current_student: dict[str, Any] = Depends(get_current_student),
-    presensi_service: PresensiService = Depends(get_presensi_service),
-) -> AttendanceRecordResponse:
-    """Validate an open QR session token + campus GPS geofence and record attendance."""
-    return presensi_service.submit_qr_attendance(str(current_student["nim"]), payload)
-
-
 @router.post("/room-qr/validate", response_model=ValidateRoomQrResponse)
 def validate_room_qr(
     payload: ValidateRoomQrRequest,
@@ -96,7 +85,6 @@ async def record_face_attendance(
             nim=nim,
             image_bytes=img_bytes,
             sesi_presensi_id=payload.sesi_presensi_id,
-            qr_token=payload.qr_token,
             latitude=payload.latitude,
             longitude=payload.longitude,
             accuracy=payload.accuracy,
@@ -118,7 +106,6 @@ async def record_face_attendance(
         nim=nim,
         image_bytes=img_bytes,
         sesi_presensi_id=str(form.get("sesi_presensi_id")) if form.get("sesi_presensi_id") else None,
-        qr_token=str(form.get("qr_token")) if form.get("qr_token") else None,
         latitude=latitude,
         longitude=longitude,
         accuracy=accuracy,

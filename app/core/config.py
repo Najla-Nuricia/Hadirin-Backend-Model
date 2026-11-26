@@ -48,7 +48,6 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("MAX_GPS_DISTANCE_METERS", "GEOFENCE_RADIUS_METERS"),
     )
     geofence_max_accuracy_meters: float = Field(default=100.0, ge=0)
-    qr_token_ttl_seconds: int = Field(default=30, ge=5)
 
     # Face recognition (MTCNN + MobileFaceNet)
     face_similarity_threshold: float = Field(default=0.5, ge=-1.0, le=1.0)
@@ -71,7 +70,8 @@ class Settings(BaseSettings):
     dosen_initial_password: str = Field(default="dosen123", min_length=1)
 
     # Testing / Development
-    testing_bypass_session: bool = Field(default=False, description="Jika True, bypass is_open dan QR expiry untuk testing absensi.")
+    testing_bypass_session: bool = Field(default=False, description="Jika True, longgarkan threshold similarity verifikasi wajah untuk testing.")
+    testing_bypass_location: bool = Field(default=False, description="Jika True, bypass geofence dan akurasi GPS untuk testing absensi.")
 
     # HTTP / CORS
     cors_allow_origins: str = "*"

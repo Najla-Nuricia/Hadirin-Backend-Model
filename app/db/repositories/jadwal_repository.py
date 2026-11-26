@@ -49,6 +49,18 @@ class JadwalRepository(BaseRepository):
         res = self.client.table("v_jadwal_lengkap").select("*").eq("id", jadwal_id).limit(1).execute()
         return self.first_or_none(res.data)
 
+    def get_kelas_id(self, jadwal_id: str) -> str | None:
+        """Fetch the class ID of a schedule (not exposed by `v_jadwal_lengkap`)."""
+        res = (
+            self.client.table("jadwal_kuliah")
+            .select("kelas_id")
+            .eq("id", jadwal_id)
+            .limit(1)
+            .execute()
+        )
+        row = self.first_or_none(res.data)
+        return str(row["kelas_id"]) if row and row.get("kelas_id") else None
+
     def find_matching_jadwal(
         self,
         kelas_nama: str | None = None,

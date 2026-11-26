@@ -64,7 +64,6 @@ class DosenJadwalSummaryItem(BaseModel):
     hari_ini: bool = False
     jumlah_mahasiswa: int = 0
     jumlah_sesi: int = 0
-    sesi_terakhir: str | None = None
     sesi_aktif_id: str | None = None
     ringkasan_kehadiran: AttendanceCountsSummary
 
@@ -123,7 +122,6 @@ class DosenKehadiranListResponse(BaseModel):
     courseName: str | None = None
     className: str | None = None
     date: str
-    is_open: bool
     summary: AttendanceCountsSummary
     students: list[DosenStudentAttendanceItem]
 
@@ -153,16 +151,3 @@ class DosenMatkulListResponse(BaseModel):
     data: list[DosenMatkulItem]
     total: int
 
-
-class SesiPresensiQrResponse(BaseModel):
-    """Dynamic QR session state returned when opening, refreshing, or closing a session."""
-
-    sesi_presensi_id: str
-    jadwal_id: str
-    tanggal: str
-    course_name: str | None = None
-    kelas: str | None = None
-    is_open: bool
-    qr_code: str | None = None
-    qr_expires_at: str | None = None
-    qr_ttl_seconds: int

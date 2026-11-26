@@ -13,7 +13,7 @@ JADWAL_DOSEN_COLUMNS = (
 )
 
 SESI_PRESENSI_COLUMNS = (
-    "id, jadwal_id, tanggal, qr_token, qr_expires_at, is_open, "
+    "id, jadwal_id, "
     "jadwal_kuliah(dosen_nip, kelas_id, kelas(nama), mata_kuliah(nama))"
 )
 
@@ -190,20 +190,15 @@ class DosenRepository(BaseRepository):
         )
         return self.first_or_none(res.data)
 
-    def get_latest_sesi_for_jadwal(
-        self,
-        jadwal_id: str,
-        tanggal_iso: str | None = None,
-    ) -> dict[str, Any] | None:
-        """Return latest attendance session for a schedule, optionally pinned to a date."""
-        query = (
+    def get_sesi_by_jadwal_id(self, jadwal_id: str) -> dict[str, Any] | None:
+        """Return the single persistent session for a schedule."""
+        res = (
             self.client.table("sesi_presensi")
-            .select("id, tanggal, is_open")
+            .select("id, jadwal_id")
             .eq("jadwal_id", jadwal_id)
+            .limit(1)
+            .execute()
         )
-        if tanggal_iso is not None:
-            query = query.eq("tanggal", tanggal_iso)
-        res = query.order("tanggal", desc=True).limit(1).execute()
         return self.first_or_none(res.data)
 
     def list_students_by_kelas_ids(
@@ -227,7 +222,7 @@ class DosenRepository(BaseRepository):
         return self.fetch_rows_in(
             client=self.client,
             table="sesi_presensi",
-            columns="id, jadwal_id, tanggal, is_open",
+            columns="id, jadwal_id",
             filter_column="jadwal_id",
             values=jadwal_ids,
             order_by="id",
@@ -246,47 +241,23 @@ class DosenRepository(BaseRepository):
             page_size=self.settings.supabase_page_size,
         )
 
-    def list_kehadiran_for_sesi(self, sesi_id: str) -> list[dict[str, Any]]:
-        """Paginated fetch of `kehadiran` + `pengajuan_ketidakhadiran` rows for a session."""
-        return self.fetch_rows_in(
-            client=self.client,
-            table="kehadiran",
-            columns=(
-                "nim, status, jam_masuk, catatan, "
+    def list_kehadiran_for_sesi(
+        self,
+        sesi_id: str,
+        tanggal_iso: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch `kehadiran` + `pengajuan` rows for a session on a given date."""
+        query = (
+            self.client.table("kehadiran")
+            .select(
+                "nim, tanggal, status, jam_masuk, catatan, "
                 "pengajuan_ketidakhadiran(alasan, dokumen_path, status_pengajuan)"
-            ),
-            filter_column="sesi_presensi_id",
-            values=[sesi_id],
-            order_by="nim",
-            page_size=self.settings.supabase_page_size,
+            )
+            .eq("sesi_presensi_id", sesi_id)
         )
+        if tanggal_iso:
+            query = query.eq("tanggal", tanggal_iso)
+        res = query.order("nim").execute()
+        return res.data or []
 
-    def upsert_open_sesi(self, payload: dict[str, Any]) -> dict[str, Any] | None:
-        """Open or refresh today's `sesi_presensi` row via `(jadwal_id, tanggal)` upsert."""
-        res = (
-            self.client.table("sesi_presensi")
-            .upsert(payload, on_conflict="jadwal_id,tanggal")
-            .execute()
-        )
-        return self.first_or_none(res.data)
 
-    def update_sesi_qr(self, sesi_id: str, fields: dict[str, Any]) -> dict[str, Any] | None:
-        """Rotate QR fields on a currently open session."""
-        res = (
-            self.client.table("sesi_presensi")
-            .update(fields)
-            .eq("id", sesi_id)
-            .eq("is_open", True)
-            .execute()
-        )
-        return self.first_or_none(res.data)
-
-    def close_sesi(self, sesi_id: str) -> dict[str, Any] | None:
-        """Close an attendance session and clear its active QR token."""
-        res = (
-            self.client.table("sesi_presensi")
-            .update({"is_open": False, "qr_token": None, "qr_expires_at": None})
-            .eq("id", sesi_id)
-            .execute()
-        )
-        return self.first_or_none(res.data)

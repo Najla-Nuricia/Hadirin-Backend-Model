@@ -1,19 +1,16 @@
 """Integration tests for MTCNN + MobileFaceNet registration, update, verify, and attendance."""
 
 import base64
-from datetime import datetime, timedelta, timezone
 import io
 from pathlib import Path
-from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.core.config import Settings
-from app.db.repositories import JadwalRepository, KehadiranRepository
-from app.db.session import get_supabase_client
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "faces"
+JADWAL_TI3A_SENIN = "33333333-0000-0000-0000-000000000001"
 
 
 def _blank_jpeg_bytes() -> bytes:
@@ -26,9 +23,10 @@ def test_face_registration_update_verify_and_attendance(
     client: TestClient,
     temp_student: dict[str, object],
     settings: Settings,
+    session_clock: dict,
+    ensure_sesi,
 ) -> None:
     headers = temp_student["headers"]
-    nim = str(temp_student["nim"])
 
     sheldon_ref = (FIXTURES_DIR / "sheldon_ref.jpg").read_bytes()
     sheldon_probe = (FIXTURES_DIR / "sheldon_probe.jpg").read_bytes()
@@ -86,54 +84,35 @@ def test_face_registration_update_verify_and_attendance(
     assert mismatch_resp.json()["matched"] is False
     assert mismatch_resp.json()["similarity"] < settings.face_similarity_threshold
 
-    # 6. Face attendance against a real open `sesi_presensi` records `kehadiran` + snapshot photo.
-    supabase = get_supabase_client(settings)
-    jadwal_repo = JadwalRepository(client=supabase, settings=settings)
-    kehadiran_repo = KehadiranRepository(client=supabase, settings=settings)
-    jadwal = jadwal_repo.list_by_kelas_nama("TI-3A")[0]
-    sesi = kehadiran_repo.create_sesi_presensi(
-        {
-            "jadwal_id": jadwal["id"],
-            "tanggal": "2099-01-20",
-            "qr_token": f"FACE_SESI_{uuid4().hex[:8]}",
-            "qr_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=20)).isoformat(),
-            "is_open": True,
-            "dibuka_oleh": jadwal.get("dosen_nip"),
-        }
+    # 6. Face attendance against the persistent session records `kehadiran`.
+    sesi = ensure_sesi(JADWAL_TI3A_SENIN)
+    sesi_id = sesi["sesi_presensi_id"]
+
+    # Different person rejected from face attendance check-in with 403.
+    bad_att = client.post(
+        "/attendance/face",
+        data={"sesi_presensi_id": sesi_id},
+        files={"file": ("leonard_probe.jpg", leonard_probe, "image/jpeg")},
+        headers=headers,  # type: ignore[arg-type]
     )
-    sesi_id = str(sesi["id"])
+    assert bad_att.status_code == 403
 
-    try:
-        # Different person rejected from face attendance check-in with 403.
-        bad_att = client.post(
-            "/attendance/face",
-            data={"sesi_presensi_id": sesi_id},
-            files={"file": ("leonard_probe.jpg", leonard_probe, "image/jpeg")},
-            headers=headers,  # type: ignore[arg-type]
-        )
-        assert bad_att.status_code == 403
-
-        # Matching person succeeds and writes `kehadiran` without storing the probe photo.
-        ok_att = client.post(
-            "/attendance/face",
-            data={
-                "sesi_presensi_id": sesi_id,
-                "latitude": str(settings.campus_latitude),
-                "longitude": str(settings.campus_longitude),
-            },
-            files={"file": ("sheldon_probe.jpg", sheldon_probe, "image/jpeg")},
-            headers=headers,  # type: ignore[arg-type]
-        )
-        assert ok_att.status_code == 200, ok_att.text
-        att_data = ok_att.json()
-        assert att_data["status"] == "hadir"
-        assert att_data["similarity"] >= settings.face_similarity_threshold
-        assert att_data["kehadiran_id"] is not None
-    finally:
-        existing_k = kehadiran_repo.get_kehadiran_by_sesi_and_nim(sesi_id, nim)
-        if existing_k:
-            kehadiran_repo.delete_kehadiran_by_id(str(existing_k["id"]))
-        kehadiran_repo.delete_sesi_presensi(sesi_id)
+    # Matching person succeeds and writes `kehadiran` without storing the probe photo.
+    ok_att = client.post(
+        "/attendance/face",
+        data={
+            "sesi_presensi_id": sesi_id,
+            "latitude": str(settings.campus_latitude),
+            "longitude": str(settings.campus_longitude),
+        },
+        files={"file": ("sheldon_probe.jpg", sheldon_probe, "image/jpeg")},
+        headers=headers,  # type: ignore[arg-type]
+    )
+    assert ok_att.status_code == 200, ok_att.text
+    att_data = ok_att.json()
+    assert att_data["status"] == "hadir"
+    assert att_data["similarity"] >= settings.face_similarity_threshold
+    assert att_data["kehadiran_id"] is not None
 
     # 7. Updating face samples via base64 JSON replaces active template cleanly.
     leonard_b64 = base64.b64encode(leonard_probe).decode("ascii")
