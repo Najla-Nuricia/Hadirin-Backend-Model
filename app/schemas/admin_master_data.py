@@ -296,6 +296,23 @@ class AdminKelasWriteRequest(BaseModel):
         return value
 
 
+class AdminRuanganQrItem(BaseModel):
+    """Response item for a room static door QR code."""
+
+    kode: str
+    nama: str
+    qr_token: str
+    qr_data: str
+    format: str = "statis"
+    title: str
+    instruksi: str
+
+
+class AdminRuanganQrListResponse(BaseModel):
+    data: list[AdminRuanganQrItem]
+    total: int
+
+
 class AdminSesiKuliahItem(BaseModel):
     """Response item for a class time-slot option."""
 

@@ -27,6 +27,8 @@ from app.schemas.admin_master_data import (
     AdminRuanganItem,
     AdminRuanganListResponse,
     AdminRuanganMutationResponse,
+    AdminRuanganQrItem,
+    AdminRuanganQrListResponse,
     AdminRuanganWriteRequest,
     AdminSesiKuliahListResponse,
     AdminTahunAjaranItem,
@@ -229,6 +231,37 @@ def list_admin_ruangan(
     service: AdminMasterDataService = Depends(get_admin_master_data_service),
 ) -> AdminRuanganListResponse:
     return service.list_ruangan(search)
+
+
+@router.get(
+    "/ruangan/qr-statis",
+    response_model=AdminRuanganQrListResponse,
+    summary="Daftar kartu QR statis pintu ruangan (admin)",
+    description=(
+        "Mengembalikan data kartu QR statis seluruh ruangan untuk dicetak/ditempel di pintu kelas. "
+        "Format token bersifat deterministik: HADIRIN:ROOM:<kode>."
+    ),
+)
+def list_admin_ruangan_qr(
+    search: str | None = Query(default=None, max_length=100),
+    _: dict[str, Any] = Depends(get_current_admin),
+    service: AdminOptionsService = Depends(get_admin_options_service),
+) -> AdminRuanganQrListResponse:
+    return service.list_ruangan_qr(search)
+
+
+@router.get(
+    "/ruangan/{kode}/qr-statis",
+    response_model=AdminRuanganQrItem,
+    summary="Kartu QR statis pintu satu ruangan (admin)",
+    description="Mengembalikan kartu QR statis siap cetak untuk satu ruangan berdasarkan kode.",
+)
+def get_admin_ruangan_qr(
+    kode: str,
+    _: dict[str, Any] = Depends(get_current_admin),
+    service: AdminOptionsService = Depends(get_admin_options_service),
+) -> AdminRuanganQrItem:
+    return service.get_ruangan_qr(kode)
 
 
 @router.get("/ruangan/{kode}", response_model=AdminRuanganItem, response_model_exclude_none=True)

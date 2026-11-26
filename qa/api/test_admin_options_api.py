@@ -121,6 +121,19 @@ def test_prodi_ruangan_and_sesi_options_are_exposed(
         {"nomor": 1, "jam_mulai": "07:00", "jam_selesai": "07:50"}
     ]
 
+    ruangan_qr = options_api.get("/admin/ruangan/qr-statis", headers=admin_headers)
+    assert ruangan_qr.status_code == 200, ruangan_qr.text
+    assert ruangan_qr.json()["total"] == 1
+    qr_item = ruangan_qr.json()["data"][0]
+    assert qr_item["kode"] == "J301"
+    assert qr_item["qr_token"] == "HADIRIN:ROOM:J301"
+    assert qr_item["format"] == "statis"
+
+    single_qr = options_api.get("/admin/ruangan/J301/qr-statis", headers=admin_headers)
+    assert single_qr.status_code == 200, single_qr.text
+    assert single_qr.json()["kode"] == "J301"
+    assert single_qr.json()["qr_token"] == "HADIRIN:ROOM:J301"
+
 
 def test_kelas_endpoint_returns_metadata_and_applies_filters(
     options_api: TestClient,
