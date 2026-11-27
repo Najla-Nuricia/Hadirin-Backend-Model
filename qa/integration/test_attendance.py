@@ -5,6 +5,8 @@ from datetime import timedelta
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
+from app.db.repositories import JadwalRepository
+from app.db.session import get_supabase_client
 
 METERS_PER_DEGREE_LATITUDE = 111_194.93
 JADWAL_TI3A_SENIN = "33333333-0000-0000-0000-000000000001"
@@ -143,3 +145,25 @@ def test_gps_attendance_is_idempotent_per_day(
     next_day = client.post("/attendance/gps", headers=headers, json=payload)  # type: ignore[arg-type]
     assert next_day.status_code == 200, next_day.text
     assert next_day.json()["kehadiran_id"] != first.json()["kehadiran_id"]
+
+
+def test_active_sessions_only_include_today_schedule(
+    client: TestClient,
+    temp_student: dict[str, object],
+    settings: Settings,
+    session_clock: dict,
+) -> None:
+    """`/attendance/sesi-aktif` must only expose sessions for today's jadwal."""
+    jadwal_repo = JadwalRepository(client=get_supabase_client(settings), settings=settings)
+    expected = {
+        str(j["id"]) for j in jadwal_repo.list_by_kelas_nama("TI-3A", hari="senin")
+    }
+    assert expected
+
+    response = client.get(
+        "/attendance/sesi-aktif",
+        headers=temp_student["headers"],  # type: ignore[arg-type]
+    )
+    assert response.status_code == 200, response.text
+    actual = {item["jadwal_id"] for item in response.json()["data"]}
+    assert actual == expected

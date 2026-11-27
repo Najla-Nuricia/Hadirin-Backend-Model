@@ -151,3 +151,16 @@ class DosenMatkulListResponse(BaseModel):
     data: list[DosenMatkulItem]
     total: int
 
+
+class DosenTestingToggleRequest(BaseModel):
+    """Payload untuk mengubah toggle testing milik dosen yang sedang login."""
+
+    enabled: bool
+
+
+class DosenTestingToggleResponse(BaseModel):
+    """Status toggle testing untuk dosen yang sedang login."""
+
+    dosen_nip: str
+    location_bypass: bool
+
