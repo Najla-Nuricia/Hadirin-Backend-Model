@@ -33,6 +33,7 @@ from app.services.common import (
     format_hhmm,
     haversine_meters,
 )
+from app.services.testing_toggles import testing_toggles
 from app.services.face_recognition.face_service import FaceService
 
 WINDOW_TOLERANCE = timedelta(hours=1)
@@ -125,12 +126,16 @@ class PresensiService:
         return PresensiHistoryResponse(data=items, total=len(items))
 
     def list_active_sessions(self, nim: str) -> ActiveSessionListResponse:
-        """List persistent attendance sessions for the student's class."""
+        """List persistent attendance sessions for the student's class today."""
         kelas_nama = self._get_student_kelas_nama(nim)
         if not kelas_nama:
             return ActiveSessionListResponse(data=[], total=0)
 
-        jadwals = self.jadwal_repo.list_by_kelas_nama(kelas_nama)
+        today_hari = WEEKDAY_TO_HARI.get(common.now_wib().weekday(), "")
+        jadwals = [
+            j for j in self.jadwal_repo.list_by_kelas_nama(kelas_nama)
+            if str(j.get("hari") or "").lower() == today_hari
+        ]
         jadwal_map = {str(j["id"]): j for j in jadwals if j.get("id")}
         sessions = self.kehadiran_repo.list_sesi_by_jadwal_ids(list(jadwal_map.keys()))
 
@@ -161,11 +166,6 @@ class PresensiService:
     ) -> AttendanceRecordResponse:
         """Validate GPS accuracy & campus geofence and record DB attendance if session is active."""
         student = self._get_student_or_404(nim)
-        distance = self._validate_gps_radius(
-            payload.latitude,
-            payload.longitude,
-            accuracy=payload.accuracy,
-        )
 
         now = common.now_wib()
         jam_masuk = now.strftime("%H:%M:%S")
@@ -174,6 +174,12 @@ class PresensiService:
         tanggal_iso = now.date().isoformat()
         sesi = self._resolve_target_session(student, payload.sesi_presensi_id, None)
         jadwal = self._validate_jadwal(sesi, student)
+        distance = self._validate_gps_radius(
+            payload.latitude,
+            payload.longitude,
+            accuracy=payload.accuracy,
+            dosen_nip=str(jadwal.get("dosen_nip") or "") if jadwal else None,
+        )
 
         saved = self.kehadiran_repo.upsert_kehadiran(
             sesi_presensi_id=str(sesi["id"]),
@@ -216,15 +222,16 @@ class PresensiService:
     ) -> ValidateRoomQrResponse:
         """Validate static door QR scanned by student before unlocking live camera face scan."""
         student = self._get_student_or_404(nim)
+
+        sesi = self._resolve_target_session(student, sesi_presensi_id=None, qr_token=payload.qr_token)
+        jadwal = self._validate_jadwal(sesi, student)
         if payload.latitude is not None and payload.longitude is not None:
             self._validate_gps_radius(
                 payload.latitude,
                 payload.longitude,
                 accuracy=payload.accuracy,
+                dosen_nip=str(jadwal.get("dosen_nip") or "") if jadwal else None,
             )
-
-        sesi = self._resolve_target_session(student, sesi_presensi_id=None, qr_token=payload.qr_token)
-        jadwal = self._validate_jadwal(sesi, student)
 
         ruangan_kode = str(jadwal.get("ruangan_kode") if jadwal else "").strip()
         ruangan_nama = str((jadwal.get("ruangan_nama") if jadwal else "") or ruangan_kode or "Ruangan Kelas").strip()
@@ -259,14 +266,19 @@ class PresensiService:
     ) -> AttendanceRecordResponse:
         """Verify face with ML engine, validate session/GPS, and record `kehadiran` without storing the photo."""
         student = self._get_student_or_404(nim)
-        distance: float | None = None
-        if latitude is not None and longitude is not None:
-            distance = self._validate_gps_radius(latitude, longitude, accuracy=accuracy)
 
         now = common.now_wib()
         tanggal_iso = now.date().isoformat()
         sesi = self._resolve_target_session(student, sesi_presensi_id, None)
         jadwal = self._validate_jadwal(sesi, student)
+        distance: float | None = None
+        if latitude is not None and longitude is not None:
+            distance = self._validate_gps_radius(
+                latitude,
+                longitude,
+                accuracy=accuracy,
+                dosen_nip=str(jadwal.get("dosen_nip") or "") if jadwal else None,
+            )
 
         result, _ = self.face_service.verify_for_attendance(nim=nim, image_bytes=image_bytes)
         if not result.matched:
@@ -315,6 +327,7 @@ class PresensiService:
         latitude: float,
         longitude: float,
         accuracy: float | None = None,
+        dosen_nip: str | None = None,
     ) -> float:
         distance = haversine_meters(
             latitude,
@@ -322,7 +335,9 @@ class PresensiService:
             self.settings.campus_latitude,
             self.settings.campus_longitude,
         )
-        if self.settings.testing_bypass_location:
+        if self.settings.testing_bypass_location or testing_toggles.is_location_bypass_enabled(
+            dosen_nip
+        ):
             return distance
         if accuracy is not None and accuracy > self.settings.geofence_max_accuracy_meters:
             raise UnprocessableError(

@@ -13,8 +13,11 @@ from app.schemas.dosen import (
     DosenLoginRequest,
     DosenLoginResponse,
     DosenMatkulListResponse,
+    DosenTestingToggleRequest,
+    DosenTestingToggleResponse,
 )
 from app.services.dosen_service import DosenService
+from app.services.testing_toggles import testing_toggles
 
 router = APIRouter(tags=["Dosen"])
 
@@ -70,4 +73,30 @@ def get_jadwal_kehadiran(
         jadwal_id=str(jadwal_id),
         nip=str(current_dosen["nip"]),
         tanggal_iso=tanggal.isoformat() if tanggal is not None else None,
+    )
+
+
+@router.get("/dosen/testing/lokasi-bypass", response_model=DosenTestingToggleResponse)
+def get_location_bypass(
+    current_dosen: dict[str, Any] = Depends(get_current_dosen),
+) -> DosenTestingToggleResponse:
+    """Return this lecturer's location-bypass toggle for testing."""
+    nip = str(current_dosen["nip"])
+    return DosenTestingToggleResponse(
+        dosen_nip=nip,
+        location_bypass=testing_toggles.is_location_bypass_enabled(nip),
+    )
+
+
+@router.put("/dosen/testing/lokasi-bypass", response_model=DosenTestingToggleResponse)
+def set_location_bypass(
+    payload: DosenTestingToggleRequest,
+    current_dosen: dict[str, Any] = Depends(get_current_dosen),
+) -> DosenTestingToggleResponse:
+    """Enable/disable this lecturer's location-bypass toggle for testing."""
+    nip = str(current_dosen["nip"])
+    testing_toggles.set_location_bypass(nip, payload.enabled)
+    return DosenTestingToggleResponse(
+        dosen_nip=nip,
+        location_bypass=testing_toggles.is_location_bypass_enabled(nip),
     )
